@@ -3,24 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ADHD 專注閱讀器 — 低飽和護眼網頁版</title>
+  <title>ADHD 專注閱讀器</title>
 
-  <!-- 字體載入：無襯線、襯線與等寬字體 -->
+  <!-- 字體載入 -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@400;600;700&display=swap" rel="stylesheet" />
 
-  <!-- Tailwind CSS CDN -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- PDF.js (多頁文字精準座標解析與畫布渲染) & pdf-lib (一鍵匯出含標註與筆記附錄之 PDF) -->
+  <!-- PDF.js (多頁文字精準座標解析與畫布渲染) & pdf-lib (匯出含標註與筆記附錄之 PDF) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 
   <!-- Google Identity Services (選用原生 Google 登入識別) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-  <!-- React 18 & Babel Standalone (免建置直接於 GitHub Pages 運行) -->
+  <!-- React 18 & Babel Standalone -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -45,7 +45,6 @@
       --warn: #b08954;
       --warn-soft: rgba(176, 137, 84, 0.18);
       --danger: #b36262;
-      --success: #648c75;
     }
 
     .theme-paper {
@@ -64,7 +63,6 @@
       --warn: #9c743e;
       --warn-soft: rgba(156, 116, 62, 0.14);
       --danger: #a65353;
-      --success: #4f7861;
     }
 
     .theme-sepia {
@@ -83,7 +81,6 @@
       --warn: #8f6838;
       --warn-soft: rgba(143, 104, 56, 0.16);
       --danger: #9e5048;
-      --success: #56755e;
     }
 
     .theme-sage {
@@ -102,7 +99,6 @@
       --warn: #ab8857;
       --warn-soft: rgba(171, 136, 87, 0.18);
       --danger: #ad6363;
-      --success: #689179;
     }
 
     * { box-sizing: border-box; }
@@ -137,19 +133,19 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-    // 設定 PDF.js Worker
     if (window.pdfjsLib) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc =
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 
     // =========================================================================
-    // 1. 統一線寬 SVG 圖示庫 (零外部套件衝突，維持柔和 65%~85% 視覺諧和度)
+    // 1. 統一線寬 SVG 圖示庫
     // =========================================================================
     function Icon({ name, className = 'w-4 h-4' }) {
       const paths = {
         folder: <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></>,
         plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+        upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>,
         play: <><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></>,
         pause: <><rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/></>,
         up: <><polyline points="18 15 12 9 6 15"/></>,
@@ -183,7 +179,6 @@
         camera: <><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></>,
         bookmark: <><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></>,
         chat: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>,
-        reset: <><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>,
         external: <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>,
         logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>
       };
@@ -203,7 +198,6 @@
       );
     }
 
-    // 無文字純色滑動開關 (符合 UI 規範：不在滑動鈕內塞入 ON/OFF 文字，以柔和色差表達狀態)
     function ToggleSwitch({ checked, onChange, label }) {
       return (
         <label className="flex items-center justify-between gap-3 cursor-pointer select-none py-1">
@@ -217,9 +211,8 @@
             className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none"
           >
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ${
-                checked ? 'translate-x-4.5 ml-0.5' : 'translate-x-0.5'
-              }`}
+              style={{ transform: checked ? 'translateX(17px)' : 'translateX(2px)' }}
+              className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
             />
           </button>
         </label>
@@ -229,7 +222,7 @@
     // =========================================================================
     // 2. 本機 IndexedDB 永久儲存引擎 (依帳號 UID 完全獨立隔離書庫、PDF 與筆記)
     // =========================================================================
-    const IDB_NAME = 'ADHDFocusReaderGitHub_v1';
+    const IDB_NAME = 'ADHDFocusReaderClean_v2';
     const IDB_VERSION = 1;
 
     function openReaderDB() {
@@ -337,7 +330,7 @@
     }
 
     // =========================================================================
-    // 3. 莫蘭迪低飽和色票、主題與雙 AI 模型設定 (完全無螢光色)
+    // 3. 莫蘭迪低飽和色票、主題與 AI 模型設定 (完全無螢光色)
     // =========================================================================
     const THEMES = {
       slate: { name: '霧夜深岩', className: 'theme-slate', isDark: true },
@@ -346,7 +339,6 @@
       sage:  { name: '靜謐鼠尾草', className: 'theme-sage', isDark: true }
     };
 
-    // 莫蘭迪低飽和度霧面標記筆色票 (取代傳統刺眼螢光筆)
     const MARKER_COLORS = [
       { id: 'ochre', name: '暖赭麥', hex: '#c8a86b', bgLight: 'rgba(200, 168, 107, 0.30)', bgDark: 'rgba(200, 168, 107, 0.25)', rgb: [0.78, 0.66, 0.42] },
       { id: 'sage', name: '灰豆綠', hex: '#82a38b', bgLight: 'rgba(130, 163, 139, 0.30)', bgDark: 'rgba(130, 163, 139, 0.25)', rgb: [0.51, 0.64, 0.55] },
@@ -356,9 +348,9 @@
 
     const PROVIDER_MODELS = {
       gemini: [
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (最新極速)' },
-    { id: 'gemini-3.8-pro', label: 'Gemini 3.8 Pro (嚴謹學術深思)' }
-  ],
+        { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (最新極速)' },
+        { id: 'gemini-3.8-pro', label: 'Gemini 3.8 Pro (嚴謹學術深思)' }
+      ],
       openai: [
         { id: 'gpt-4o-mini', label: 'GPT-4o mini (輕快直覺)' },
         { id: 'gpt-4o', label: 'GPT-4o (旗艦語境理解)' },
@@ -394,74 +386,15 @@
         model: 'AI 閱讀助理',
         thinkingLabel: '就緒',
         content:
-          '歡迎使用 ADHD 專注閱讀器！\n\n• 反白選字或長按句子 0.4 秒：立即顯示「反白即翻」快速直譯，或點擊「語境深譯」結合前後文嚴謹解析。\n• 點選「問問 AI」：可將選取詞句帶入此側邊欄，自由切換模型與思考程度深入提問。'
+          '歡迎使用 ADHD 專注閱讀器！\n\n• 反白選字或長按詞句 0.4 秒：「反白即翻」會走免金鑰高速字典秒回；需要嚴謹前後文脈絡時請點「語境深譯」。\n• 點選「問問 AI」：可將選中詞句帶入側邊欄，自由切換模型與思考程度深入提問。'
       }
     ];
 
-    // 內建兩份多頁測試文獻 (含哲學現象學文本與神經科學文本，供立即體驗嚴謹翻譯，亦可隨時從書庫刪除)
-    const PRELOADED_DOCS = {
-      'preset-philosophy': {
-        id: 'preset-philosophy',
-        isPreset: true,
-        filename: 'phenomenology-of-attention.pdf',
-        fileSize: 215040,
-        title: 'Phenomenology of Attention and Temporality',
-        subtitle: 'Philosophy of Mind • 2 Pages (預設範例，可刪除)',
-        domainHint: '當代心靈哲學與現象學 (Phenomenology & Philosophy of Mind)',
-        pages: [
-          {
-            pageNumber: 1,
-            blocks: [
-              { type: 'heading', text: 'Phenomenology of Attention and Temporality' },
-              { type: 'paragraph', text: 'In classical phenomenology, consciousness is never a self-enclosed container of private representations; rather, it is fundamentally characterized by intentionality—its directedness toward an object.' },
-              { type: 'paragraph', text: 'When we read a complex philosophical treatise, attention functions like a shifting horizon that foregrounds a thematic core while relegating surrounding perceptions to an implicit background.' },
-              { type: 'paragraph', text: 'For Edmund Husserl, every lived experience involves a threefold temporal synthesis: primal impression, retention of what has just passed, and protention toward what is about to emerge.' }
-            ]
-          },
-          {
-            pageNumber: 2,
-            blocks: [
-              { type: 'heading', text: 'Cognitive Overload and Embodied Focus' },
-              { type: 'paragraph', text: 'Maurice Merleau-Ponty further argues that perception is anchored in the lived body (corps propre) rather than detached intellect. Visual clutter disrupts our pre-reflective bodily attunement to the text.' },
-              { type: 'paragraph', text: 'By structuring the visual field into a calm figure-ground contrast, an external prosthesis of attention allows the reader to sustain hermeneutic engagement without premature cognitive fatigue.' }
-            ]
-          }
-        ]
-      },
-      'preset-sleep': {
-        id: 'preset-sleep',
-        isPreset: true,
-        filename: 'genetics-of-short-sleep.pdf',
-        fileSize: 268400,
-        title: "The Genetics Behind Natural Short Sleepers",
-        subtitle: 'Neuroscience Review • 2 Pages (預設範例，可刪除)',
-        domainHint: '神經科學與睡眠遺傳學科普報導',
-        pages: [
-          {
-            pageNumber: 1,
-            blocks: [
-              { type: 'heading', text: "The Genetics Behind Natural Short Sleepers" },
-              { type: 'paragraph', text: "Most adults aged 26 to 64 require seven to nine hours of sleep every night to maintain optimal executive function and memory consolidation." },
-              { type: 'paragraph', text: "However, researchers at the University of California, San Francisco identified a rare heritable condition known as familial natural short sleep (FNSS). Individuals carrying these genetic mutations wake up naturally after four to six hours without daytime impairment." }
-            ]
-          },
-          {
-            pageNumber: 2,
-            blocks: [
-              { type: 'heading', text: 'The Illusion of Adaptation' },
-              { type: 'paragraph', text: "Sleep scientist Hans van Dongen cautions that chronically sleep-deprived adults progressively lose cognitive accuracy while remaining subjectively unaware of their accumulating deficit." },
-              { type: 'paragraph', text: "Distinguishing true genetic resilience from masked exhaustion remains a central challenge in modern chronobiology and clinical medicine." }
-            ]
-          }
-        ]
-      }
-    };
-
     // =========================================================================
-    // 4. 多頁文字型 PDF 精準座標解析、PDF 生成與雙引擎 AI 呼叫函式
+    // 4. 多頁文字型 PDF 解析、免金鑰極速字典與 AI 雙引擎呼叫函式
     // =========================================================================
     function formatFileSize(bytes) {
-      if (!bytes || bytes <= 0) return '內建範例';
+      if (!bytes || bytes <= 0) return 'PDF 檔案';
       if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
@@ -489,7 +422,7 @@
       return merged;
     }
 
-    // 多頁文字 PDF 精準解析引擎 (支援 CMap 中英文字型、Y/X 座標排序、跨行連字號接合與標題辨識)
+    // 多頁文字 PDF 精準解析引擎 (支援 CMap、Y/X 座標排序、跨行連字號接合與標題辨識)
     async function extractStructuredPagesFromPdf(pdfDoc, filterHeaderFooter = true, onProgress = null) {
       const pages = [];
       let totalCharCount = 0;
@@ -629,91 +562,64 @@
       return { pages, totalCharCount };
     }
 
-    // 為內建範例文章生成真實 PDF 二進位檔供預覽與標註匯出
-    async function generatePreloadedPdfBytes(docRecord) {
-      if (!window.PDFLib) return null;
-      const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
-      const pdfDoc = await PDFDocument.create();
-      const fontRegular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-      const safeAscii = (str) =>
-        (str || '')
-          .replace(/[‘’]/g, "'")
-          .replace(/[“”]/g, '"')
-          .replace(/[–—]/g, '-')
-          .replace(/[^\x20-\x7E]/g, ' ');
-
-      for (const p of docRecord.pages || []) {
-        const page = pdfDoc.addPage([595.28, 841.89]);
-        let cursorY = 780;
-
-        page.drawText(safeAscii(`${docRecord.title}  |  Page ${p.pageNumber}`), {
-          x: 52,
-          y: 810,
-          size: 9,
-          font: fontBold,
-          color: rgb(0.45, 0.48, 0.52)
-        });
-
-        for (const block of p.blocks || []) {
-          const isHeading = block.type === 'heading';
-          const font = isHeading ? fontBold : fontRegular;
-          const fontSize = isHeading ? 16 : 12;
-          const lineHeight = isHeading ? 22 : 18;
-          const maxWidth = 490;
-          const words = safeAscii(block.text).split(/\s+/);
-          let line = '';
-          if (isHeading) cursorY -= 6;
-
-          for (const word of words) {
-            const testLine = line ? `${line} ${word}` : word;
-            if (font.widthOfTextAtSize(testLine, fontSize) > maxWidth && line) {
-              if (cursorY > 55) {
-                page.drawText(line, {
-                  x: 52,
-                  y: cursorY,
-                  size: fontSize,
-                  font,
-                  color: isHeading ? rgb(0.2, 0.25, 0.32) : rgb(0.2, 0.21, 0.22)
-                });
-              }
-              line = word;
-              cursorY -= lineHeight;
-            } else {
-              line = testLine;
-            }
+    // 免金鑰高速字典直譯通道 (完全不消耗 Gemini / OpenAI API 額度)
+    async function fetchKeylessInstantDictionary(queryText) {
+      // 通道 1：公開字典與快速直譯介面 (50~150ms 極速回應，單字自動附帶詞性與多義項)
+      try {
+        const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-TW&dt=t&dt=bd&q=${encodeURIComponent(queryText)}`;
+        const res = await fetch(gtxUrl);
+        if (res.ok) {
+          const data = await res.json();
+          const mainTrans = Array.isArray(data?.[0])
+            ? data[0].map((seg) => seg?.[0] || '').join('').trim()
+            : '';
+          let posNote = '';
+          if (Array.isArray(data?.[1]) && data[1].length > 0) {
+            posNote = data[1]
+              .slice(0, 2)
+              .map((entry) => `${entry[0]}：${(entry[1] || []).slice(0, 4).join('、')}`)
+              .join(' ｜ ');
           }
-          if (line && cursorY > 55) {
-            page.drawText(line, {
-              x: 52,
-              y: cursorY,
-              size: fontSize,
-              font,
-              color: isHeading ? rgb(0.2, 0.25, 0.32) : rgb(0.2, 0.21, 0.22)
-            });
-            cursorY -= lineHeight + 10;
+          if (mainTrans) {
+            return { translation: mainTrans, posOrNote: posNote };
           }
         }
+      } catch {
+        // 自動降級至備用字典通道
       }
-      return await pdfDoc.save();
+
+      // 通道 2：MyMemory 開放翻譯字典備援
+      const isAsciiLang = /^[A-Za-z0-9\s.,'?!:;()-]+$/.test(queryText);
+      const langPair = isAsciiLang ? 'en|zh-TW' : 'autodetect|zh-TW';
+      const mmRes = await fetch(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${langPair}`
+      );
+      if (!mmRes.ok) {
+        throw new Error('免費字典通道暫時忙碌，請直接點下方「語境深譯」');
+      }
+      const mmData = await mmRes.json();
+      const mmText = mmData?.responseData?.translatedText?.trim();
+      if (!mmText) {
+        throw new Error('查無直譯結果，請點下方「語境深譯」');
+      }
+      return { translation: mmText, posOrNote: '' };
     }
 
-    // 雙引擎統一呼叫介面：同時支援 Google Gemini API 與 OpenAI (ChatGPT) API
+    // 雙引擎 AI 呼叫介面 (專門用於「語境深譯」、「問問 AI 側欄」與「圖片 OCR」)
     async function callUnifiedAI({
       provider = 'gemini',
       geminiKey = '',
       openaiKey = '',
       model = 'gemini-3.8-flash',
       systemInstruction = '',
-      messages = [], // [{ role: 'user' | 'assistant', text: string, imageBase64?: string }]
+      messages = [],
       thinkingLevelObj = THINKING_LEVELS[2],
       expectJson = false,
       geminiJsonSchema = null
     }) {
       if (provider === 'openai') {
         if (!openaiKey) {
-          throw new Error('請先點右上角「帳號與 AI 連線」，貼上您個人的 OpenAI (ChatGPT) API Key');
+          throw new Error('請先點右上角「帳號與 AI 連線」，貼上您的 OpenAI (ChatGPT) API Key');
         }
         const effectiveModel = model.startsWith('gpt-') || model.startsWith('o') ? model : 'gpt-4o-mini';
         const isReasoningModel = effectiveModel.startsWith('o');
@@ -769,9 +675,9 @@
         return { text: content.trim(), thought: '' };
       }
 
-// 預設使用 Google Gemini API（極速秒回優化版）
+      // Google Gemini API (支援 gemini-3.8-flash / gemini-3.8-pro)
       if (!geminiKey) {
-        throw new Error('請先點右上角「帳號與 AI 連線」，貼上您個人的免費 Google Gemini API Key');
+        throw new Error('請先點右上角「帳號與 AI 連線」，貼上您的 Google Gemini API Key');
       }
       const effectiveModel = model.startsWith('gemini-') ? model : 'gemini-3.8-flash';
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${effectiveModel}:generateContent?key=${encodeURIComponent(geminiKey)}`;
@@ -788,28 +694,39 @@
         };
       });
 
-      const generationConfig = {};
-      if (expectJson) {
-        generationConfig.responseMimeType = 'application/json';
-        if (geminiJsonSchema) generationConfig.responseSchema = geminiJsonSchema;
-      }
-
-      // 明確設定思考預算（Thinking Budget）：若為直覺秒回或 0 則不進行推演
-      if (typeof thinkingLevelObj?.geminiBudget === 'number') {
-        generationConfig.thinkingConfig = { thinkingBudget: thinkingLevelObj.geminiBudget };
-      } else {
-        generationConfig.thinkingConfig = { thinkingBudget: 0 };
-      }
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const buildBody = (includeThinking) => {
+        const generationConfig = {};
+        if (expectJson) {
+          generationConfig.responseMimeType = 'application/json';
+          if (geminiJsonSchema) generationConfig.responseSchema = geminiJsonSchema;
+        }
+        if (includeThinking && typeof thinkingLevelObj?.geminiBudget === 'number') {
+          generationConfig.thinkingConfig = { thinkingBudget: thinkingLevelObj.geminiBudget };
+        }
+        return {
           contents,
           ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
           ...(Object.keys(generationConfig).length > 0 ? { generationConfig } : {})
-        })
+        };
+      };
+
+      let res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildBody(true))
       });
+
+      // 若特定模型端點不支援 thinkingConfig 參數，自動無縫降級重送一次
+      if (res.status === 400) {
+        const errCheck = await res.clone().json().catch(() => ({}));
+        if (/thinking/i.test(errCheck?.error?.message || '')) {
+          res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildBody(false))
+          });
+        }
+      }
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -826,7 +743,7 @@
       return { text: answerText.trim(), thought: thoughtText.trim() };
     }
 
-    // 將重點筆記分頁渲染成高解析度圖片嵌入匯出的 PDF (支援無限多筆中文筆記不亂碼、不截斷)
+    // 將重點筆記分頁渲染成高解析度圖片嵌入匯出的 PDF
     function renderNotesPagesToPngDataUrls(title, highlights) {
       const chunks = [];
       const pageSize = 10;
@@ -924,7 +841,6 @@
       });
     }
 
-    // 解析 Google Identity JWT (若使用者選填 Google Client ID 原生登入時使用)
     function decodeJwtPayload(token) {
       try {
         const base64Url = token.split('.')[1];
@@ -967,8 +883,8 @@
         };
       }, [accountProfile]);
 
-      // 雙 AI 引擎設定狀態 (Gemini / OpenAI)
-      const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openai'
+      // 雙 AI 引擎設定狀態 (專供「語境深譯」與「AI 側欄 / OCR」使用)
+      const [aiProvider, setAiProvider] = useState('gemini');
       const [geminiApiKey, setGeminiApiKey] = useState('');
       const [openaiApiKey, setOpenaiApiKey] = useState('');
       const [geminiKeyDraft, setGeminiKeyDraft] = useState('');
@@ -986,18 +902,17 @@
       const [importProgressText, setImportProgressText] = useState('');
       const [toastMsg, setToastMsg] = useState('');
 
-      // 書庫與當前文獻
+      // 書庫與當前文獻 (預設空白，無寫死範例文章)
       const [libraryDocs, setLibraryDocs] = useState([]);
       const [activeDocId, setActiveDocId] = useState(null);
       const [docMeta, setDocMeta] = useState({
-        title: 'Phenomenology of Attention and Temporality',
-        subtitle: 'Philosophy of Mind • 2 Pages',
-        filename: 'phenomenology-of-attention.pdf',
-        domainHint: '當代心靈哲學與現象學',
-        numPages: 2,
-        isPreset: true
+        title: '尚未開啟文獻',
+        subtitle: '請匯入 PDF 開始專注閱讀',
+        filename: '',
+        domainHint: '',
+        numPages: 0
       });
-      const [docPages, setDocPages] = useState(PRELOADED_DOCS['preset-philosophy'].pages);
+      const [docPages, setDocPages] = useState([]);
       const [pdfBytes, setPdfBytes] = useState(null);
 
       // 閱讀介面與控制面板狀態
@@ -1019,6 +934,7 @@
       const [selectionPopover, setSelectionPopover] = useState(null);
       const quickTransCacheRef = useRef({});
       const quickReqIdRef = useRef(0);
+      const transDebounceRef = useRef(null);
 
       // 重點標註與常規 PDF 編輯器狀態
       const [textHighlights, setTextHighlights] = useState([]);
@@ -1033,7 +949,7 @@
       const [isOcrLoading, setIsOcrLoading] = useState(false);
       const [isExportingPdf, setIsExportingPdf] = useState(false);
 
-      // 側邊欄 AI 問答狀態
+      // 側邊欄 AI 問答狀態 (預設使用最新 gemini-3.8-flash)
       const [quotedContext, setQuotedContext] = useState(null);
       const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
       const [thinkingLevel, setThinkingLevel] = useState('medium');
@@ -1063,12 +979,10 @@
         toastTimerRef.current = setTimeout(() => setToastMsg(''), 3200);
       }, []);
 
-      // 同步主題 Class 到 <body>
       useEffect(() => {
         document.body.className = currentTheme.className;
       }, [currentTheme.className]);
 
-      // 當切換 AI 供應商時，自動對齊該供應商的預設模型
       useEffect(() => {
         const models = PROVIDER_MODELS[aiProvider] || PROVIDER_MODELS.gemini;
         if (!models.some((m) => m.id === selectedModel)) {
@@ -1076,7 +990,6 @@
         }
       }, [aiProvider, selectedModel]);
 
-      // 將多頁內容拆解為逐句或逐段聚光燈陣列
       const readingLines = useMemo(() => {
         const result = [];
         for (const page of docPages || []) {
@@ -1114,7 +1027,6 @@
         }
       }, [readingLines.length, activeLineIdx]);
 
-      // 聚光燈行切換時平滑置中並連動雙欄 PDF 頁碼
       useEffect(() => {
         const currentLine = readingLines[activeLineIdx];
         if (!currentLine) return;
@@ -1142,16 +1054,19 @@
         if (!docRecord) {
           setActiveDocId(null);
           setDocMeta({
-            title: '書庫目前無檔案',
-            subtitle: '請點擊左上角「匯入 PDF」導入您的多頁檔案',
+            title: '個人書庫',
+            subtitle: '請匯入 PDF 開始專注閱讀',
             filename: '',
             domainHint: '',
-            numPages: 0,
-            isPreset: false
+            numPages: 0
           });
           setDocPages([]);
           setPdfBytes(null);
+          setTextHighlights([]);
+          setPdfAnnotations([]);
+          setChatMessages(DEFAULT_WELCOME_MESSAGES());
           pdfJsDocRef.current = null;
+          await idbSetScopedKV(scopeUid, 'activeDocId', null);
           return;
         }
 
@@ -1161,8 +1076,7 @@
           subtitle: docRecord.subtitle || `共 ${docRecord.pages?.length || 1} 頁`,
           filename: docRecord.filename || `${docRecord.title}.pdf`,
           domainHint: docRecord.domainHint || '學術與專業閱讀文本',
-          numPages: docRecord.pages?.length || docRecord.numPages || 1,
-          isPreset: Boolean(docRecord.isPreset)
+          numPages: docRecord.numPages || docRecord.pages?.length || 1
         });
         setDocPages(docRecord.pages || []);
         setActiveLineIdx(docRecord.activeLineIdx || 0);
@@ -1175,39 +1089,28 @@
 
         await idbSetScopedKV(scopeUid, 'activeDocId', docRecord.id);
 
-        if (window.pdfjsLib && window.PDFLib) {
-          let bytes = docRecord.pdfBytes;
-          if (bytes && !(bytes instanceof Uint8Array)) {
-            bytes = new Uint8Array(bytes);
-          }
-          if (!bytes && docRecord.pages?.length > 0) {
-            bytes = await generatePreloadedPdfBytes(docRecord);
-            if (bytes) {
-              docRecord.pdfBytes = bytes;
-              await idbPutDoc({ ...docRecord, pdfBytes: bytes }, scopeUid);
-            }
-          }
-          if (bytes) {
-            setPdfBytes(bytes);
-            try {
-              const loadedPdf = await window.pdfjsLib.getDocument({
-                data: bytes.slice(0),
-                cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-                cMapPacked: true,
-                standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
-              }).promise;
-              pdfJsDocRef.current = loadedPdf;
-            } catch {
-              pdfJsDocRef.current = null;
-            }
-          } else {
-            setPdfBytes(null);
+        if (window.pdfjsLib && docRecord.pdfBytes) {
+          const bytes = docRecord.pdfBytes instanceof Uint8Array
+            ? docRecord.pdfBytes
+            : new Uint8Array(docRecord.pdfBytes);
+          setPdfBytes(bytes);
+          try {
+            const loadedPdf = await window.pdfjsLib.getDocument({
+              data: bytes.slice(0),
+              cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+              cMapPacked: true,
+              standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+            }).promise;
+            pdfJsDocRef.current = loadedPdf;
+          } catch {
             pdfJsDocRef.current = null;
           }
+        } else {
+          setPdfBytes(null);
+          pdfJsDocRef.current = null;
         }
       }, [currentOwnerUid]);
 
-      // 啟動時載入上次登入身分與 Google Client ID
       useEffect(() => {
         (async () => {
           const [savedProfile, savedGClientId] = await Promise.all([
@@ -1222,7 +1125,7 @@
         })();
       }, []);
 
-      // 依帳號 UID 載入完全隔離的個人書庫、閱讀設定與雙引擎金鑰
+      // 依帳號 UID 載入完全隔離的個人書庫、閱讀設定與金鑰
       useEffect(() => {
         let mounted = true;
         async function loadWorkspace() {
@@ -1237,7 +1140,6 @@
             savedPin,
             savedTransCache,
             savedActiveId,
-            deletedPresets,
             storedDocs
           ] = await Promise.all([
             idbGetScopedKV(scopeUid, 'settings', null),
@@ -1247,7 +1149,6 @@
             idbGetScopedKV(scopeUid, 'pinCode', ''),
             idbGetScopedKV(scopeUid, 'quickTransCache', {}),
             idbGetScopedKV(scopeUid, 'activeDocId', null),
-            idbGetScopedKV(scopeUid, 'deletedPresets', []),
             idbGetAllDocs(scopeUid)
           ]);
 
@@ -1265,31 +1166,7 @@
           quickTransCacheRef.current =
             savedTransCache && typeof savedTransCache === 'object' ? savedTransCache : {};
 
-          const docsMap = new Map((storedDocs || []).map((d) => [d.id, d]));
-          const deletedSet = new Set(deletedPresets || []);
-
-          for (const [presetKey, presetVal] of Object.entries(PRELOADED_DOCS)) {
-            const scopedId = scopeUid === 'local-owner' ? presetKey : `${scopeUid}__${presetKey}`;
-            if (!docsMap.has(scopedId) && !deletedSet.has(scopedId) && !deletedSet.has(presetKey)) {
-              const initialDoc = {
-                ...presetVal,
-                id: scopedId,
-                basePresetId: presetKey,
-                ownerUid: scopeUid,
-                numPages: presetVal.pages.length,
-                activeLineIdx: 0,
-                progressPct: 1,
-                textHighlights: [],
-                pdfAnnotations: [],
-                chatMessages: DEFAULT_WELCOME_MESSAGES(),
-                updatedAt: Date.now() - (presetKey === 'preset-philosophy' ? 0 : 2000)
-              };
-              await idbPutDoc(initialDoc, scopeUid);
-              docsMap.set(scopedId, initialDoc);
-            }
-          }
-
-          const sortedDocs = Array.from(docsMap.values()).sort(
+          const sortedDocs = (storedDocs || []).sort(
             (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
           );
           setLibraryDocs(sortedDocs);
@@ -1303,7 +1180,6 @@
         return () => { mounted = false; };
       }, [currentOwnerUid, activateDocumentRecord]);
 
-      // 自動儲存個人閱讀設定與進度
       useEffect(() => {
         if (!dbInitialized) return;
         idbSetScopedKV(currentOwnerUid, 'settings', settings);
@@ -1334,7 +1210,6 @@
         return () => clearTimeout(timer);
       }, [dbInitialized, activeDocId, currentOwnerUid, activeLineIdx, readingLines.length, textHighlights, pdfAnnotations, chatMessages]);
 
-      // 若有設定選用 Google Client ID，於帳號視窗渲染官方 Google 登入按鈕
       useEffect(() => {
         if (!showAccountModal || !googleClientId || !window.google?.accounts?.id || !googleBtnContainerRef.current) return;
         try {
@@ -1360,7 +1235,7 @@
             text: 'signin_with'
           });
         } catch {
-          // 忽略無效 Client ID 例外
+          // 忽略無效 Client ID
         }
       }, [showAccountModal, googleClientId, showToast]);
 
@@ -1371,14 +1246,17 @@
           if (tag === 'input' || tag === 'textarea' || tag === 'select' || isLocked) return;
 
           if (e.key === 'ArrowDown' || e.key === 'j') {
+            if (readingLines.length === 0) return;
             e.preventDefault();
             setIsAutoPlaying(false);
             setActiveLineIdx((idx) => Math.min(readingLines.length - 1, idx + 1));
           } else if (e.key === 'ArrowUp' || e.key === 'k') {
+            if (readingLines.length === 0) return;
             e.preventDefault();
             setIsAutoPlaying(false);
             setActiveLineIdx((idx) => Math.max(0, idx - 1));
           } else if (e.code === 'Space') {
+            if (readingLines.length === 0) return;
             e.preventDefault();
             setIsAutoPlaying((p) => !p);
           } else if (e.key === 'Escape') {
@@ -1468,7 +1346,7 @@
       }, [pdfAnnotations, currentPdfPage]);
 
       useEffect(() => {
-        if (viewMode === 'focus' || !pdfJsDocRef.current || !pdfCanvasRef.current) return;
+        if (!activeDocId || viewMode === 'focus' || !pdfJsDocRef.current || !pdfCanvasRef.current) return;
         let renderTask = null;
         let cancelled = false;
 
@@ -1509,7 +1387,7 @@
           cancelled = true;
           if (renderTask?.cancel) renderTask.cancel();
         };
-      }, [viewMode, pdfBytes, currentPdfPage, pdfZoom, redrawAnnotationOverlay]);
+      }, [activeDocId, viewMode, pdfBytes, currentPdfPage, pdfZoom, redrawAnnotationOverlay]);
 
       useEffect(() => {
         redrawAnnotationOverlay();
@@ -1639,7 +1517,6 @@
             const record = {
               id: `${currentOwnerUid}-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               ownerUid: currentOwnerUid,
-              isPreset: false,
               filename: file.name,
               fileSize: file.size,
               title: firstHeading.length <= 85 ? firstHeading : cleanTitle,
@@ -1686,13 +1563,6 @@
         if (!target) return;
 
         await idbDeleteDoc(docId);
-        if (target.isPreset) {
-          const deleted = await idbGetScopedKV(currentOwnerUid, 'deletedPresets', []);
-          if (!deleted.includes(docId)) {
-            await idbSetScopedKV(currentOwnerUid, 'deletedPresets', [...deleted, docId]);
-          }
-        }
-
         const remaining = libraryDocs.filter((d) => d.id !== docId);
         setLibraryDocs(remaining);
         setConfirmDeleteId(null);
@@ -1700,42 +1570,10 @@
         if (activeDocId === docId) {
           await activateDocumentRecord(remaining[0] || null, currentOwnerUid);
         }
-        showToast(`已刪除「${target.filename || target.title}」`);
+        showToast(`已從書庫刪除「${target.filename || target.title}」`);
       };
 
-      const handleRestorePresets = async () => {
-        await idbSetScopedKV(currentOwnerUid, 'deletedPresets', []);
-        const updatedList = [...libraryDocs];
-
-        for (const [presetKey, presetVal] of Object.entries(PRELOADED_DOCS)) {
-          const scopedId = currentOwnerUid === 'local-owner' ? presetKey : `${currentOwnerUid}__${presetKey}`;
-          if (!updatedList.some((d) => d.id === scopedId || d.basePresetId === presetKey)) {
-            const rec = {
-              ...presetVal,
-              id: scopedId,
-              basePresetId: presetKey,
-              ownerUid: currentOwnerUid,
-              numPages: presetVal.pages.length,
-              activeLineIdx: 0,
-              progressPct: 1,
-              textHighlights: [],
-              pdfAnnotations: [],
-              chatMessages: DEFAULT_WELCOME_MESSAGES(),
-              updatedAt: Date.now()
-            };
-            await idbPutDoc(rec, currentOwnerUid);
-            updatedList.push(rec);
-          }
-        }
-
-        setLibraryDocs(updatedList);
-        if (!activeDocId && updatedList[0]) {
-          await activateDocumentRecord(updatedList[0], currentOwnerUid);
-        }
-        showToast('已恢復內建範例文章');
-      };
-
-      // 圖片型 PDF 單頁 AI 視覺辨識 (OCR)
+      // 圖片型 PDF 單頁 AI 視覺辨識 (走個人 Gemini / OpenAI Key)
       const handleOcrCurrentPdfPage = async () => {
         if (!pdfCanvasRef.current || isOcrLoading) return;
         if (!hasActiveApiKey) {
@@ -1805,16 +1643,14 @@
       // 一鍵保存含標註與重點筆記總整理的 PDF
       const handleExportAnnotatedPdf = async () => {
         if (!window.PDFLib || isExportingPdf) return;
+        if (!pdfBytes) {
+          showToast('請先匯入 PDF 檔案後再匯出保存');
+          return;
+        }
         setIsExportingPdf(true);
         try {
-          let sourceBytes = pdfBytes;
-          if (!sourceBytes) {
-            sourceBytes = await generatePreloadedPdfBytes({ title: docMeta.title, pages: docPages });
-          }
-          if (!sourceBytes) throw new Error('目前沒有可匯出的 PDF 內容');
-
           const { PDFDocument, rgb } = window.PDFLib;
-          const pdfDoc = await PDFDocument.load(sourceBytes);
+          const pdfDoc = await PDFDocument.load(pdfBytes);
           const pages = pdfDoc.getPages();
 
           for (const ann of pdfAnnotations) {
@@ -1902,72 +1738,47 @@
       };
 
       // =======================================================================
-// ⚡ 極速直譯：取消 JSON Schema，改為純文字超短提示詞秒回 + 本地快取
-const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
-  const cleanKey = selectedText.trim().slice(0, 300);
-  if (!cleanKey) return;
+      // 1) 反白即翻：走免金鑰高速字典通道 (0 額度消耗、毫秒級秒回 + 本地快取)
+      // =======================================================================
+      const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
+        const cleanKey = selectedText.trim().slice(0, 350);
+        if (!cleanKey) return;
 
-  // 1. 命中快取：0 毫秒直接顯示
-  const cached = quickTransCacheRef.current[cleanKey];
-  if (cached) {
-    setSelectionPopover((prev) =>
-      prev && prev.quote === selectedText
-        ? { ...prev, quickLoading: false, quickResult: cached, quickError: '' }
-        : prev
-    );
-    return;
-  }
+        // 命中本機快取時 0 延遲直接顯示
+        const cached = quickTransCacheRef.current[cleanKey];
+        if (cached) {
+          setSelectionPopover((prev) =>
+            prev && prev.quote === selectedText
+              ? { ...prev, quickLoading: false, quickResult: cached, quickError: '' }
+              : prev
+          );
+          return;
+        }
 
-  if (!hasActiveApiKey) {
-    setSelectionPopover((prev) =>
-      prev
-        ? { ...prev, quickLoading: false, quickError: '請點右上角設定 API Key' }
-        : null
-    );
-    return;
-  }
+        const reqId = ++quickReqIdRef.current;
+        setSelectionPopover((prev) =>
+          prev ? { ...prev, quickLoading: true, quickResult: null, quickError: '' } : null
+        );
 
-  const reqId = ++quickReqIdRef.current;
-  setSelectionPopover((prev) =>
-    prev ? { ...prev, quickLoading: true, quickResult: null, quickError: '' } : null
-  );
+        try {
+          const resultObj = await fetchKeylessInstantDictionary(cleanKey);
+          if (reqId !== quickReqIdRef.current) return;
 
-  try {
-    // 極簡提示詞，直接回傳純文字，不走耗時的 JSON 格式解析
-    const prompt = `將下列文字極速直譯為繁體中文（如已是中文則簡釋）："${cleanKey}"。請直接回傳譯文，勿加任何引號、前綴或說明。`;
+          quickTransCacheRef.current[cleanKey] = resultObj;
+          const keys = Object.keys(quickTransCacheRef.current);
+          if (keys.length > 400) delete quickTransCacheRef.current[keys[0]];
+          idbSetScopedKV(currentOwnerUid, 'quickTransCache', quickTransCacheRef.current);
 
-    const { text } = await callUnifiedAI({
-      provider: aiProvider,
-      geminiKey: geminiApiKey,
-      openaiKey: openaiApiKey,
-      model: aiProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-3.8-flash',
-      systemInstruction: '你是極速即時字典。直接輸出繁體中文釋義，回答越簡短越好。',
-      messages: [{ role: 'user', text: prompt }],
-      thinkingLevelObj: THINKING_LEVELS[0], // 關閉思考過程，追求秒回
-      expectJson: false // 關鍵：關閉 JSON 解析以大幅提速
-    });
-
-    if (reqId !== quickReqIdRef.current) return;
-
-    const resultObj = {
-      translation: text.replace(/^["'「」]+|["'「」]+$/g, '').trim(),
-      posOrNote: ''
-    };
-
-    // 寫入快取
-    quickTransCacheRef.current[cleanKey] = resultObj;
-    idbSetScopedKV(currentOwnerUid, 'quickTransCache', quickTransCacheRef.current);
-
-    setSelectionPopover((prev) =>
-      prev ? { ...prev, quickLoading: false, quickResult: resultObj } : null
-    );
-  } catch (err) {
-    if (reqId !== quickReqIdRef.current) return;
-    setSelectionPopover((prev) =>
-      prev ? { ...prev, quickLoading: false, quickError: err.message || '查詢逾時' } : null
-    );
-  }
-}, [aiProvider, geminiApiKey, openaiApiKey, hasActiveApiKey, currentOwnerUid]);
+          setSelectionPopover((prev) =>
+            prev ? { ...prev, quickLoading: false, quickResult: resultObj } : null
+          );
+        } catch (err) {
+          if (reqId !== quickReqIdRef.current) return;
+          setSelectionPopover((prev) =>
+            prev ? { ...prev, quickLoading: false, quickError: err.message || '直譯連線逾時' } : null
+          );
+        }
+      }, [currentOwnerUid]);
 
       const openSelectionMenu = useCallback(({ quote, lineObj, lineIndex, clientX, clientY }) => {
         const cleaned = (quote || '').trim();
@@ -1981,6 +1792,8 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
           ? Math.min(window.innerHeight - 80, clientY + 20)
           : Math.max(70, clientY - 12);
 
+        const cached = quickTransCacheRef.current[cleaned.slice(0, 350)] || null;
+
         setSelectionPopover({
           quote: cleaned,
           lineId: lineObj?.id || '',
@@ -1989,23 +1802,21 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
           x: safeX,
           y: safeY,
           placeBelow,
-          quickLoading: false,
-          quickResult: null,
+          quickLoading: settings.instantTranslate && !cached,
+          quickResult: cached,
           quickError: '',
           deepLoading: false,
           deepResult: null,
           deepError: ''
         });
 
-        if (settings.instantTranslate) {
-        if (window._transDebounceTimer) clearTimeout(window._transDebounceTimer);
-        window._transDebounceTimer = setTimeout(() => {
-          triggerQuickInstantTranslate(cleaned);
-        }, 200);
-      }
-    },
-    [currentPdfPage, settings.instantTranslate, triggerQuickInstantTranslate]
-  );
+        if (settings.instantTranslate && !cached) {
+          if (transDebounceRef.current) clearTimeout(transDebounceRef.current);
+          transDebounceRef.current = setTimeout(() => {
+            triggerQuickInstantTranslate(cleaned);
+          }, 300);
+        }
+      }, [currentPdfPage, settings.instantTranslate, triggerQuickInstantTranslate]);
 
       const handleLineMouseUp = (e, lineObj, idx) => {
         if (longPressTimerRef.current) {
@@ -2027,7 +1838,6 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
         }
       };
 
-      // 長按 0.42 秒自動擷取游標所在詞語或整句
       const handleLinePointerDown = (e, lineObj, idx) => {
         if (e.button && e.button !== 0) return;
         const { clientX, clientY } = e;
@@ -2060,12 +1870,14 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
         }
       };
 
-      // 執行「語境深譯」（依據學科性質如哲學、科學、法學等進行嚴謹脈絡翻譯與釋義）
+      // =======================================================================
+      // 2) 語境深譯：走您的個人 Gemini Key / OpenAI Key (嚴謹結合前後文脈絡)
+      // =======================================================================
       const handleRunContextualTranslate = async () => {
         if (!selectionPopover || selectionPopover.deepLoading) return;
         if (!hasActiveApiKey) {
           setShowAccountModal(true);
-          showToast('請先設定您的 Gemini 或 OpenAI API Key');
+          showToast('請先設定您的個人 Gemini 或 OpenAI API Key');
           return;
         }
 
@@ -2164,7 +1976,9 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
         setShowRightSidebar(true);
       };
 
-      // 發送側邊欄多輪對話
+      // =======================================================================
+      // 3) AI 側欄多輪問答：走您的個人 Gemini Key / OpenAI Key
+      // =======================================================================
       const handleSendChat = async (e) => {
         if (e) e.preventDefault();
         const question = chatInput.trim();
@@ -2297,7 +2111,6 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
         showToast('已儲存個人空間的 AI 引擎與連線設定');
       };
 
-      // 支援同一行內多處霧面畫重點渲染
       const renderHighlightedLineText = (line) => {
         const lineHls = textHighlights.filter(
           (h) => h.quote && (h.lineId === line.id || (h.quote.length >= 3 && line.text.includes(h.quote)))
@@ -2422,7 +2235,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
             onChange={(e) => handleImportPdfFiles(e.target.files)}
           />
 
-          {/* 頂部導覽列：寬敞呼吸間距、65% 柔和圖示透明度、零螢光色 */}
+          {/* 頂部導覽列 */}
           <header
             style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
             className="h-14 px-4 flex items-center justify-between gap-3 border-b shrink-0 z-30 relative backdrop-blur-md"
@@ -2441,7 +2254,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                 >
                   <span className="opacity-70 shrink-0"><Icon name="folder" className="w-4 h-4" /></span>
                   <span className="truncate text-xs sm:text-sm font-medium flex-1 text-left">
-                    {docMeta.title || '個人書庫'}
+                    {activeDocId ? docMeta.title : `個人書庫 (${libraryDocs.length})`}
                   </span>
                   <span className="opacity-55 shrink-0"><Icon name="down" className="w-3.5 h-3.5" /></span>
                 </button>
@@ -2453,7 +2266,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                   >
                     <div className="flex items-center justify-between gap-2 pb-3 mb-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
                       <div className="min-w-0">
-                        <h3 className="text-xs font-bold truncate">個人書庫 ({libraryDocs.length})</h3>
+                        <h3 className="text-xs font-bold truncate">已保留書庫 ({libraryDocs.length})</h3>
                         <p className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
                           空間：{currentAccountDisplay.name}
                         </p>
@@ -2471,7 +2284,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                     <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
                       {libraryDocs.length === 0 ? (
                         <div className="py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                          書庫尚無檔案，請點擊「匯入 PDF」導入您的多頁文獻
+                          書庫尚無檔案，請點擊上方「匯入 PDF」導入您的多頁文獻
                         </div>
                       ) : (
                         libraryDocs.map((item) => {
@@ -2499,14 +2312,9 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                               >
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-xs font-semibold truncate">{item.title}</span>
-                                  {item.isPreset && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded opacity-75 shrink-0" style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                                      範例
-                                    </span>
-                                  )}
                                 </div>
                                 <div className="flex items-center gap-2 text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                  <span>{item.pages?.length || item.numPages || 1} 頁</span>
+                                  <span>{item.numPages || item.pages?.length || 1} 頁</span>
                                   <span>•</span>
                                   <span>進度 {item.progressPct || 1}%</span>
                                   <span>•</span>
@@ -2548,13 +2356,9 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                       )}
                     </div>
 
-                    <div className="pt-3 mt-2.5 border-t flex items-center justify-between text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                      <button onClick={handleRestorePresets} className="hover:opacity-100 flex items-center gap-1">
-                        <Icon name="reset" className="w-3 h-3" />
-                        <span>恢復範例文章</span>
-                      </button>
+                    <div className="pt-3 mt-2.5 border-t flex items-center justify-end text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                       <button onClick={() => setShowLibraryMenu(false)} className="hover:opacity-100">
-                        收合
+                        收合選單
                       </button>
                     </div>
                   </div>
@@ -2599,14 +2403,14 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
               })}
             </nav>
 
-            {/* 右區：功能控制組 (保持 >= 12px 視覺呼吸感) */}
+            {/* 右區：功能控制組 */}
             <div className="flex items-center gap-2.5 shrink-0">
               {/* 反白即翻切換鈕 */}
               <button
                 onClick={() =>
                   setSettings((s) => {
                     const next = !s.instantTranslate;
-                    showToast(next ? '已開啟「反白即翻」快速直譯' : '已關閉「反白即翻」');
+                    showToast(next ? '已開啟「反白即翻」免金鑰極速字典' : '已關閉「反白即翻」');
                     return { ...s, instantTranslate: next };
                   })
                 }
@@ -2616,7 +2420,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                     : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }
                 }
                 className="h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
-                title="切換反白即翻譯（快速直譯，不與語境深譯衝突）"
+                title="切換反白即翻譯（免金鑰高速字典，不消耗 Gemini 額度）"
               >
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: settings.instantTranslate ? 'var(--warn)' : 'var(--border-color)' }} />
                 <span className="hidden xl:inline">反白即翻</span>
@@ -2798,7 +2602,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                       <ToggleSwitch
                         checked={settings.instantTranslate}
                         onChange={(val) => setSettings((s) => ({ ...s, instantTranslate: val }))}
-                        label="反白即翻譯（選字立即顯示極速直譯）"
+                        label="反白即翻譯（免金鑰高速字典秒回）"
                       />
                       <ToggleSwitch
                         checked={settings.filterHeaderFooter}
@@ -2813,9 +2617,9 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
               {/* 一鍵保存 PDF */}
               <button
                 onClick={handleExportAnnotatedPdf}
-                disabled={isExportingPdf}
+                disabled={isExportingPdf || !activeDocId}
                 style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                className="h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition hover:opacity-90"
+                className="h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition hover:opacity-90 disabled:opacity-40"
                 title="一鍵匯出含標註塗鴉與重點筆記附錄的 PDF 檔案"
               >
                 <span className="opacity-70"><Icon name="download" className="w-3.5 h-3.5" /></span>
@@ -2900,387 +2704,423 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
 
           {/* 主內容工作區 */}
           <div className="flex-1 flex min-h-0 overflow-hidden relative">
-            {/* 左欄／主欄：語意化 <main> ADHD 聚光燈閱讀區 */}
-            {viewMode !== 'pdf' && (
-              <main
-                onClick={() => {
-                  if (selectionPopover && !window.getSelection()?.toString().trim()) {
-                    setSelectionPopover(null);
-                  }
-                }}
-                style={{ borderColor: 'var(--border-color)' }}
-                className={`relative overflow-y-auto scroll-smooth px-4 sm:px-8 pt-8 pb-32 ${
-                  viewMode === 'split' ? 'w-full md:w-1/2 border-r' : 'flex-1'
-                }`}
-              >
-                <div style={{ maxWidth: `${settings.maxWidth}px` }} className={`mx-auto ${fontClass}`}>
-                  <div className="mb-8 pb-5 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="flex items-center flex-wrap gap-2 text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                      <span className="px-2.5 py-0.5 rounded-md font-medium" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
-                        共 {docMeta.numPages} 頁
-                      </span>
-                      <span>•</span>
-                      <span>{docMeta.subtitle}</span>
-                      <span>•</span>
-                      <span>點擊或 ↑↓ 切換聚光燈位置，反白或長按詞句可翻譯、提問與畫重點</span>
-                    </div>
-                    <h1 className="text-xl sm:text-2xl font-bold tracking-tight leading-snug">
-                      {docMeta.title}
-                    </h1>
-                  </div>
-
-                  {readingLines.length === 0 ? (
-                    <div
-                      style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-                      className="rounded-2xl border p-8 text-center space-y-3"
-                    >
-                      <p className="text-sm font-semibold">本頁未偵測到文字圖層（可能為圖片掃描型 PDF）</p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        請切換至「雙欄對照」或「PDF 標註」並點擊「AI 圖片轉文字」，或匯入其他多頁文字型 PDF。
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {readingLines.map((line, idx) => {
-                        const isActive = idx === activeLineIdx;
-                        const prevLine = idx > 0 ? readingLines[idx - 1] : null;
-                        const showPageDivider = !prevLine || prevLine.pageNumber !== line.pageNumber;
-                        const inactiveOpacity = Math.max(0.08, 1 - settings.dimIntensity / 100);
-
-                        return (
-                          <React.Fragment key={line.id}>
-                            {showPageDivider && (
-                              <div className="pt-5 pb-2 flex items-center gap-3 select-none">
-                                <span
-                                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-                                  className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
-                                >
-                                  Page {line.pageNumber} / {docMeta.numPages}
-                                </span>
-                                <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-                              </div>
-                            )}
-
-                            <div
-                              ref={(el) => { lineRefs.current[idx] = el; }}
-                              onClick={() => {
-                                if (!window.getSelection()?.toString().trim()) setActiveLineIdx(idx);
-                              }}
-                              onMouseUp={(e) => handleLineMouseUp(e, line, idx)}
-                              onPointerDown={(e) => handleLinePointerDown(e, line, idx)}
-                              onPointerUp={cancelLongPress}
-                              onPointerCancel={cancelLongPress}
-                              style={{
-                                opacity: isActive ? 1 : inactiveOpacity,
-                                backgroundColor: isActive ? 'var(--bg-active-card)' : 'transparent',
-                                borderColor: isActive ? 'var(--border-color)' : 'transparent',
-                                fontSize: line.type === 'heading' ? `${Math.round(settings.fontSize * 1.22)}px` : `${settings.fontSize}px`,
-                                lineHeight: settings.lineHeight,
-                                letterSpacing: `${settings.letterSpacing}em`
-                              }}
-                              className={`relative rounded-2xl px-4 sm:px-5 py-3 border transition-all duration-200 cursor-pointer ${
-                                isActive ? 'shadow-md' : 'hover:opacity-75'
-                              } ${line.type === 'heading' ? 'font-bold mt-3' : ''}`}
-                            >
-                              {isActive && (
-                                <span
-                                  style={{ backgroundColor: 'var(--accent)' }}
-                                  className="absolute left-1.5 top-3 bottom-3 w-1 rounded-full"
-                                />
-                              )}
-
-                              <div>{renderHighlightedLineText(line)}</div>
-
-                              {isActive && isAutoPlaying && (
-                                <div className="mt-2.5 h-1 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                                  <div
-                                    style={{ width: `${autoPlayProgress}%`, backgroundColor: 'var(--accent)' }}
-                                    className="h-full"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* 底部毛玻璃膠囊自動播放控制列 */}
-                {readingLines.length > 0 && (
-                  <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 max-w-[94vw]">
-                    <div
-                      role="toolbar"
-                      aria-label="自動換行閱讀控制器"
-                      style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
-                      className="flex items-center gap-2.5 sm:gap-3 px-4 py-2 rounded-full border shadow-xl backdrop-blur-md"
-                    >
-                      <button
-                        onClick={() => {
-                          setIsAutoPlaying(false);
-                          setActiveLineIdx((i) => Math.max(0, i - 1));
-                        }}
-                        disabled={activeLineIdx <= 0}
-                        className="p-1.5 rounded-full disabled:opacity-30 hover:opacity-80"
-                        title="上一行 (↑)"
-                      >
-                        <Icon name="up" className="w-4 h-4" />
-                      </button>
-
-                      <button
-                        onClick={() => setIsAutoPlaying((v) => !v)}
-                        style={{ backgroundColor: isAutoPlaying ? 'var(--warn)' : 'var(--accent)' }}
-                        className="h-8 px-4 rounded-full text-xs font-semibold flex items-center gap-1.5 text-white whitespace-nowrap transition hover:opacity-90"
-                      >
-                        <Icon name={isAutoPlaying ? 'pause' : 'play'} className="w-3.5 h-3.5" />
-                        <span>{isAutoPlaying ? '暫停' : '自動播放'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setIsAutoPlaying(false);
-                          setActiveLineIdx((i) => Math.min(readingLines.length - 1, i + 1));
-                        }}
-                        disabled={activeLineIdx >= readingLines.length - 1}
-                        className="p-1.5 rounded-full disabled:opacity-30 hover:opacity-80"
-                        title="下一行 (↓)"
-                      >
-                        <Icon name="down" className="w-4 h-4" />
-                      </button>
-
-                      <div className="h-4 w-px" style={{ backgroundColor: 'var(--border-color)' }} />
-
-                      <span className="text-[11px] font-mono whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                        {activeLineIdx + 1} / {readingLines.length}
-                      </span>
-
-                      <div className="hidden sm:flex items-center gap-2 pl-2 border-l" style={{ borderColor: 'var(--border-color)' }}>
-                        <span className="text-[11px] whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>速度</span>
-                        <input
-                          type="range"
-                          min="80"
-                          max="360"
-                          step="10"
-                          value={settings.wpm}
-                          onChange={(e) => setSettings((s) => ({ ...s, wpm: Number(e.target.value) }))}
-                          className="w-16"
-                        />
-                        <span className="text-[11px] font-mono w-12 text-right">{settings.wpm}wpm</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </main>
-            )}
-
-            {/* 右欄／全寬：常規 PDF 畫布標註編輯器 */}
-            {viewMode !== 'focus' && (
-              <section
-                className={`flex flex-col min-h-0 overflow-hidden ${
-                  viewMode === 'split' ? 'hidden md:flex md:w-1/2' : 'flex-1'
-                }`}
-              >
+            {!activeDocId ? (
+              /* 書庫尚無檔案時的簡潔護眼匯入畫面 */
+              <main className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
                 <div
-                  style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
-                  className="px-3 py-2 border-b flex items-center justify-between gap-2 flex-wrap shrink-0"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
+                  className="w-full max-w-lg rounded-3xl border border-dashed p-10 text-center space-y-4 cursor-pointer transition hover:opacity-95 shadow-sm"
                 >
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => setCurrentPdfPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPdfPage <= 1}
-                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                      className="p-1.5 rounded-lg border disabled:opacity-35"
-                    >
-                      <Icon name="left" className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="text-xs font-mono px-1.5 whitespace-nowrap">
-                      P.{currentPdfPage} / {docMeta.numPages || 1}
-                    </span>
-                    <button
-                      onClick={() => setCurrentPdfPage((p) => Math.min(docMeta.numPages || 1, p + 1))}
-                      disabled={currentPdfPage >= (docMeta.numPages || 1)}
-                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                      className="p-1.5 rounded-lg border disabled:opacity-35"
-                    >
-                      <Icon name="right" className="w-3.5 h-3.5" />
-                    </button>
-
-                    <div className="h-4 w-px mx-1" style={{ backgroundColor: 'var(--border-color)' }} />
-
-                    <button
-                      onClick={() => setPdfZoom((z) => Math.max(0.7, Number((z - 0.15).toFixed(2))))}
-                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                      className="p-1.5 rounded-lg border"
-                    >
-                      <Icon name="zoomOut" className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="text-[11px] font-mono w-10 text-center">{Math.round(pdfZoom * 100)}%</span>
-                    <button
-                      onClick={() => setPdfZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
-                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                      className="p-1.5 rounded-lg border"
-                    >
-                      <Icon name="zoomIn" className="w-3.5 h-3.5" />
-                    </button>
+                  <div
+                    style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}
+                    className="w-14 h-14 rounded-2xl mx-auto flex items-center justify-center"
+                  >
+                    <Icon name="upload" className="w-6 h-6" />
                   </div>
-
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {[
-                      { id: 'marker', label: '霧面標記', icon: 'marker' },
-                      { id: 'pen', label: '鋼筆', icon: 'pen' },
-                      { id: 'note', label: '便利貼', icon: 'note' },
-                      { id: 'eraser', label: '橡皮擦', icon: 'eraser' }
-                    ].map((tool) => {
-                      const active = pdfTool === tool.id;
-                      return (
-                        <button
-                          key={tool.id}
-                          onClick={() => setPdfTool(active ? 'cursor' : tool.id)}
-                          style={
-                            active
-                              ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
-                              : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
-                          }
-                          className="h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1 border transition"
-                        >
-                          <Icon name={tool.icon} className="w-3.5 h-3.5" />
-                          <span className="hidden xl:inline">{tool.label}</span>
-                        </button>
-                      );
-                    })}
-
-                    <div className="flex items-center gap-1.5 px-1">
-                      {MARKER_COLORS.map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => setActiveBrushColor(c.id)}
-                          style={{
-                            backgroundColor: c.hex,
-                            outline: activeBrushColor === c.id ? '2px solid var(--text-main)' : 'none',
-                            outlineOffset: '2px'
-                          }}
-                          className="w-4 h-4 rounded-full transition"
-                          title={c.name}
-                        />
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={() =>
-                        setPdfAnnotations((prev) => {
-                          const idx = [...prev].reverse().findIndex((a) => a.page === currentPdfPage);
-                          if (idx === -1) return prev;
-                          const targetIdx = prev.length - 1 - idx;
-                          return prev.filter((_, i) => i !== targetIdx);
-                        })
-                      }
-                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                      className="h-7 px-2 rounded-lg border text-xs flex items-center"
-                      title="復原上一步標註"
-                    >
-                      <Icon name="undo" className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      onClick={() => setPdfSpotlightRuler((v) => !v)}
-                      style={
-                        pdfSpotlightRuler
-                          ? { backgroundColor: 'var(--warn-soft)', borderColor: 'var(--warn)' }
-                          : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
-                      }
-                      className="h-7 px-2.5 rounded-lg border text-xs font-medium flex items-center gap-1"
-                    >
-                      <Icon name="eye" className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">閱讀尺</span>
-                    </button>
-
-                    <button
-                      onClick={handleOcrCurrentPdfPage}
-                      disabled={isOcrLoading}
+                  <div className="space-y-1.5">
+                    <h1 className="text-lg font-bold">匯入您的 PDF 開始專注閱讀</h1>
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                      點擊此處選擇檔案，或直接將多頁文字型／圖片型 PDF 拖曳至視窗中。<br />
+                      匯入的檔案與重點筆記將自動保存在您個人的瀏覽器書庫內，與他人完全隔離。
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <span
                       style={{ backgroundColor: 'var(--accent)' }}
-                      className="h-7 px-2.5 rounded-lg text-white text-xs font-medium flex items-center gap-1 whitespace-nowrap"
-                      title="辨識掃描圖片型 PDF 頁面並匯入專注閱讀區"
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs font-semibold"
                     >
-                      <Icon name="camera" className="w-3.5 h-3.5" />
-                      <span>{isOcrLoading ? '辨識中...' : 'AI 圖片轉文字'}</span>
-                    </button>
+                      <Icon name="plus" className="w-4 h-4" />
+                      <span>選擇 PDF 檔案</span>
+                    </span>
                   </div>
                 </div>
-
-                <div className="flex-1 overflow-auto p-4 flex justify-center items-start" style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                  <div
-                    className="relative shadow-xl rounded-lg overflow-hidden bg-white select-none"
-                    onPointerMove={handleOverlayPointerMove}
-                    onPointerUp={handleOverlayPointerUp}
+              </main>
+            ) : (
+              <>
+                {/* 左欄／主欄：ADHD 聚光燈閱讀區 */}
+                {viewMode !== 'pdf' && (
+                  <main
+                    onClick={() => {
+                      if (selectionPopover && !window.getSelection()?.toString().trim()) {
+                        setSelectionPopover(null);
+                      }
+                    }}
+                    style={{ borderColor: 'var(--border-color)' }}
+                    className={`relative overflow-y-auto scroll-smooth px-4 sm:px-8 pt-8 pb-32 ${
+                      viewMode === 'split' ? 'w-full md:w-1/2 border-r' : 'flex-1'
+                    }`}
                   >
-                    <canvas ref={pdfCanvasRef} className="block" />
-                    <canvas
-                      ref={overlayCanvasRef}
-                      onPointerDown={handleOverlayPointerDown}
-                      className={`absolute inset-0 touch-none ${pdfTool === 'cursor' ? 'cursor-default' : 'cursor-crosshair'}`}
-                    />
+                    <div style={{ maxWidth: `${settings.maxWidth}px` }} className={`mx-auto ${fontClass}`}>
+                      <div className="mb-8 pb-5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                        <div className="flex items-center flex-wrap gap-2 text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                          <span className="px-2.5 py-0.5 rounded-md font-medium" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
+                            共 {docMeta.numPages} 頁
+                          </span>
+                          <span>•</span>
+                          <span>{docMeta.subtitle}</span>
+                          <span>•</span>
+                          <span>點擊或 ↑↓ 切換聚光燈行，反白或長按詞句可翻譯、提問與畫重點</span>
+                        </div>
+                        <h1 className="text-xl sm:text-2xl font-bold tracking-tight leading-snug">
+                          {docMeta.title}
+                        </h1>
+                      </div>
 
-                    {pdfSpotlightRuler && (
-                      <div className="absolute inset-0 pointer-events-none">
-                        <div style={{ height: `${Math.max(0, rulerYRatio * 100 - 6)}%`, backgroundColor: 'rgba(30,34,40,0.62)' }} className="w-full" />
-                        <div style={{ borderColor: '#c8a86b', backgroundColor: 'rgba(200,168,107,0.06)' }} className="h-[12%] w-full border-y-2" />
-                        <div style={{ backgroundColor: 'rgba(30,34,40,0.62)' }} className="h-full w-full" />
+                      {readingLines.length === 0 ? (
+                        <div
+                          style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
+                          className="rounded-2xl border p-8 text-center space-y-3"
+                        >
+                          <p className="text-sm font-semibold">本檔案尚未擷取到文字圖層（可能為掃描圖片型 PDF）</p>
+                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            請切換至上方「雙欄對照」或「PDF 標註」，點擊工具列的「AI 圖片轉文字」即可將頁面辨識匯入專注閱讀區。
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {readingLines.map((line, idx) => {
+                            const isActive = idx === activeLineIdx;
+                            const prevLine = idx > 0 ? readingLines[idx - 1] : null;
+                            const showPageDivider = !prevLine || prevLine.pageNumber !== line.pageNumber;
+                            const inactiveOpacity = Math.max(0.08, 1 - settings.dimIntensity / 100);
+
+                            return (
+                              <React.Fragment key={line.id}>
+                                {showPageDivider && (
+                                  <div className="pt-5 pb-2 flex items-center gap-3 select-none">
+                                    <span
+                                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                                      className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
+                                    >
+                                      Page {line.pageNumber} / {docMeta.numPages}
+                                    </span>
+                                    <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+                                  </div>
+                                )}
+
+                                <div
+                                  ref={(el) => { lineRefs.current[idx] = el; }}
+                                  onClick={() => {
+                                    if (!window.getSelection()?.toString().trim()) setActiveLineIdx(idx);
+                                  }}
+                                  onMouseUp={(e) => handleLineMouseUp(e, line, idx)}
+                                  onPointerDown={(e) => handleLinePointerDown(e, line, idx)}
+                                  onPointerUp={cancelLongPress}
+                                  onPointerCancel={cancelLongPress}
+                                  style={{
+                                    opacity: isActive ? 1 : inactiveOpacity,
+                                    backgroundColor: isActive ? 'var(--bg-active-card)' : 'transparent',
+                                    borderColor: isActive ? 'var(--border-color)' : 'transparent',
+                                    fontSize: line.type === 'heading' ? `${Math.round(settings.fontSize * 1.22)}px` : `${settings.fontSize}px`,
+                                    lineHeight: settings.lineHeight,
+                                    letterSpacing: `${settings.letterSpacing}em`
+                                  }}
+                                  className={`relative rounded-2xl px-4 sm:px-5 py-3 border transition-all duration-200 cursor-pointer ${
+                                    isActive ? 'shadow-md' : 'hover:opacity-75'
+                                  } ${line.type === 'heading' ? 'font-bold mt-3' : ''}`}
+                                >
+                                  {isActive && (
+                                    <span
+                                      style={{ backgroundColor: 'var(--accent)' }}
+                                      className="absolute left-1.5 top-3 bottom-3 w-1 rounded-full"
+                                    />
+                                  )}
+
+                                  <div>{renderHighlightedLineText(line)}</div>
+
+                                  {isActive && isAutoPlaying && (
+                                    <div className="mt-2.5 h-1 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                                      <div
+                                        style={{ width: `${autoPlayProgress}%`, backgroundColor: 'var(--accent)' }}
+                                        className="h-full"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 底部毛玻璃膠囊自動播放控制列 */}
+                    {readingLines.length > 0 && (
+                      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 max-w-[94vw]">
+                        <div
+                          role="toolbar"
+                          aria-label="自動換行閱讀控制器"
+                          style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
+                          className="flex items-center gap-2.5 sm:gap-3 px-4 py-2 rounded-full border shadow-xl backdrop-blur-md"
+                        >
+                          <button
+                            onClick={() => {
+                              setIsAutoPlaying(false);
+                              setActiveLineIdx((i) => Math.max(0, i - 1));
+                            }}
+                            disabled={activeLineIdx <= 0}
+                            className="p-1.5 rounded-full disabled:opacity-30 hover:opacity-80"
+                            title="上一行 (↑)"
+                          >
+                            <Icon name="up" className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => setIsAutoPlaying((v) => !v)}
+                            style={{ backgroundColor: isAutoPlaying ? 'var(--warn)' : 'var(--accent)' }}
+                            className="h-8 px-4 rounded-full text-xs font-semibold flex items-center gap-1.5 text-white whitespace-nowrap transition hover:opacity-90"
+                          >
+                            <Icon name={isAutoPlaying ? 'pause' : 'play'} className="w-3.5 h-3.5" />
+                            <span>{isAutoPlaying ? '暫停' : '自動播放'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setIsAutoPlaying(false);
+                              setActiveLineIdx((i) => Math.min(readingLines.length - 1, i + 1));
+                            }}
+                            disabled={activeLineIdx >= readingLines.length - 1}
+                            className="p-1.5 rounded-full disabled:opacity-30 hover:opacity-80"
+                            title="下一行 (↓)"
+                          >
+                            <Icon name="down" className="w-4 h-4" />
+                          </button>
+
+                          <div className="h-4 w-px" style={{ backgroundColor: 'var(--border-color)' }} />
+
+                          <span className="text-[11px] font-mono whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                            {activeLineIdx + 1} / {readingLines.length}
+                          </span>
+
+                          <div className="hidden sm:flex items-center gap-2 pl-2 border-l" style={{ borderColor: 'var(--border-color)' }}>
+                            <span className="text-[11px] whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>速度</span>
+                            <input
+                              type="range"
+                              min="80"
+                              max="360"
+                              step="10"
+                              value={settings.wpm}
+                              onChange={(e) => setSettings((s) => ({ ...s, wpm: Number(e.target.value) }))}
+                              className="w-16"
+                            />
+                            <span className="text-[11px] font-mono w-12 text-right">{settings.wpm}wpm</span>
+                          </div>
+                        </div>
                       </div>
                     )}
+                  </main>
+                )}
 
-                    {pdfAnnotations
-                      .filter((a) => a.page === currentPdfPage && a.type === 'note')
-                      .map((note) => {
-                        const cObj = MARKER_COLORS.find((c) => c.id === note.colorId) || MARKER_COLORS[0];
-                        const isEditing = editingStickyId === note.id;
-                        return (
-                          <div
-                            key={note.id}
-                            style={{ left: `${note.x * 100}%`, top: `${note.y * 100}%`, backgroundColor: cObj.hex }}
-                            className="absolute w-44 rounded-xl p-2 shadow-lg text-neutral-900 text-xs border border-black/15 z-10"
-                          >
-                            <div
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                draggingNoteRef.current = note.id;
-                              }}
-                              className="flex items-center justify-between pb-1 mb-1 border-b border-black/15 cursor-move text-[10px] font-bold opacity-80"
+                {/* 右欄／全寬：常規 PDF 畫布標註編輯器 */}
+                {viewMode !== 'focus' && (
+                  <section
+                    className={`flex flex-col min-h-0 overflow-hidden ${
+                      viewMode === 'split' ? 'hidden md:flex md:w-1/2' : 'flex-1'
+                    }`}
+                  >
+                    <div
+                      style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
+                      className="px-3 py-2 border-b flex items-center justify-between gap-2 flex-wrap shrink-0"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setCurrentPdfPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPdfPage <= 1}
+                          style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                          className="p-1.5 rounded-lg border disabled:opacity-35"
+                        >
+                          <Icon name="left" className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-xs font-mono px-1.5 whitespace-nowrap">
+                          P.{currentPdfPage} / {docMeta.numPages || 1}
+                        </span>
+                        <button
+                          onClick={() => setCurrentPdfPage((p) => Math.min(docMeta.numPages || 1, p + 1))}
+                          disabled={currentPdfPage >= (docMeta.numPages || 1)}
+                          style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                          className="p-1.5 rounded-lg border disabled:opacity-35"
+                        >
+                          <Icon name="right" className="w-3.5 h-3.5" />
+                        </button>
+
+                        <div className="h-4 w-px mx-1" style={{ backgroundColor: 'var(--border-color)' }} />
+
+                        <button
+                          onClick={() => setPdfZoom((z) => Math.max(0.7, Number((z - 0.15).toFixed(2))))}
+                          style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                          className="p-1.5 rounded-lg border"
+                        >
+                          <Icon name="zoomOut" className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-[11px] font-mono w-10 text-center">{Math.round(pdfZoom * 100)}%</span>
+                        <button
+                          onClick={() => setPdfZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
+                          style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                          className="p-1.5 rounded-lg border"
+                        >
+                          <Icon name="zoomIn" className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {[
+                          { id: 'marker', label: '霧面標記', icon: 'marker' },
+                          { id: 'pen', label: '鋼筆', icon: 'pen' },
+                          { id: 'note', label: '便利貼', icon: 'note' },
+                          { id: 'eraser', label: '橡皮擦', icon: 'eraser' }
+                        ].map((tool) => {
+                          const active = pdfTool === tool.id;
+                          return (
+                            <button
+                              key={tool.id}
+                              onClick={() => setPdfTool(active ? 'cursor' : tool.id)}
+                              style={
+                                active
+                                  ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
+                                  : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
+                              }
+                              className="h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1 border transition"
                             >
-                              <span>便利貼（拖曳移動）</span>
-                              <button
-                                onClick={() => setPdfAnnotations((prev) => prev.filter((a) => a.id !== note.id))}
-                              >
-                                <Icon name="x" className="w-3 h-3" />
-                              </button>
-                            </div>
-                            {isEditing ? (
-                              <textarea
-                                value={note.text}
-                                autoFocus
-                                rows={3}
-                                onChange={(e) =>
-                                  setPdfAnnotations((prev) =>
-                                    prev.map((a) => (a.id === note.id ? { ...a, text: e.target.value } : a))
-                                  )
-                                }
-                                onBlur={() => setEditingStickyId(null)}
-                                className="w-full bg-white/75 rounded p-1 text-xs outline-none resize-none"
-                              />
-                            ) : (
-                              <div onClick={() => setEditingStickyId(note.id)} className="whitespace-pre-wrap break-words cursor-text min-h-[36px]">
-                                {note.text}
-                              </div>
-                            )}
+                              <Icon name={tool.icon} className="w-3.5 h-3.5" />
+                              <span className="hidden xl:inline">{tool.label}</span>
+                            </button>
+                          );
+                        })}
+
+                        <div className="flex items-center gap-1.5 px-1">
+                          {MARKER_COLORS.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => setActiveBrushColor(c.id)}
+                              style={{
+                                backgroundColor: c.hex,
+                                outline: activeBrushColor === c.id ? '2px solid var(--text-main)' : 'none',
+                                outlineOffset: '2px'
+                              }}
+                              className="w-4 h-4 rounded-full transition"
+                              title={c.name}
+                            />
+                          ))}
+                        </div>
+
+                        <button
+                          onClick={() =>
+                            setPdfAnnotations((prev) => {
+                              const idx = [...prev].reverse().findIndex((a) => a.page === currentPdfPage);
+                              if (idx === -1) return prev;
+                              const targetIdx = prev.length - 1 - idx;
+                              return prev.filter((_, i) => i !== targetIdx);
+                            })
+                          }
+                          style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                          className="h-7 px-2 rounded-lg border text-xs flex items-center"
+                          title="復原上一步標註"
+                        >
+                          <Icon name="undo" className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => setPdfSpotlightRuler((v) => !v)}
+                          style={
+                            pdfSpotlightRuler
+                              ? { backgroundColor: 'var(--warn-soft)', borderColor: 'var(--warn)' }
+                              : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
+                          }
+                          className="h-7 px-2.5 rounded-lg border text-xs font-medium flex items-center gap-1"
+                        >
+                          <Icon name="eye" className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">閱讀尺</span>
+                        </button>
+
+                        <button
+                          onClick={handleOcrCurrentPdfPage}
+                          disabled={isOcrLoading}
+                          style={{ backgroundColor: 'var(--accent)' }}
+                          className="h-7 px-2.5 rounded-lg text-white text-xs font-medium flex items-center gap-1 whitespace-nowrap"
+                          title="使用個人 AI 金鑰辨識掃描圖片型 PDF 頁面並匯入專注閱讀區"
+                        >
+                          <Icon name="camera" className="w-3.5 h-3.5" />
+                          <span>{isOcrLoading ? '辨識中...' : 'AI 圖片轉文字'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-auto p-4 flex justify-center items-start" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                      <div
+                        className="relative shadow-xl rounded-lg overflow-hidden bg-white select-none"
+                        onPointerMove={handleOverlayPointerMove}
+                        onPointerUp={handleOverlayPointerUp}
+                      >
+                        <canvas ref={pdfCanvasRef} className="block" />
+                        <canvas
+                          ref={overlayCanvasRef}
+                          onPointerDown={handleOverlayPointerDown}
+                          className={`absolute inset-0 touch-none ${pdfTool === 'cursor' ? 'cursor-default' : 'cursor-crosshair'}`}
+                        />
+
+                        {pdfSpotlightRuler && (
+                          <div className="absolute inset-0 pointer-events-none">
+                            <div style={{ height: `${Math.max(0, rulerYRatio * 100 - 6)}%`, backgroundColor: 'rgba(30,34,40,0.62)' }} className="w-full" />
+                            <div style={{ borderColor: '#c8a86b', backgroundColor: 'rgba(200,168,107,0.06)' }} className="h-[12%] w-full border-y-2" />
+                            <div style={{ backgroundColor: 'rgba(30,34,40,0.62)' }} className="h-full w-full" />
                           </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              </section>
+                        )}
+
+                        {pdfAnnotations
+                          .filter((a) => a.page === currentPdfPage && a.type === 'note')
+                          .map((note) => {
+                            const cObj = MARKER_COLORS.find((c) => c.id === note.colorId) || MARKER_COLORS[0];
+                            const isEditing = editingStickyId === note.id;
+                            return (
+                              <div
+                                key={note.id}
+                                style={{ left: `${note.x * 100}%`, top: `${note.y * 100}%`, backgroundColor: cObj.hex }}
+                                className="absolute w-44 rounded-xl p-2 shadow-lg text-neutral-900 text-xs border border-black/15 z-10"
+                              >
+                                <div
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                    draggingNoteRef.current = note.id;
+                                  }}
+                                  className="flex items-center justify-between pb-1 mb-1 border-b border-black/15 cursor-move text-[10px] font-bold opacity-80"
+                                >
+                                  <span>便利貼（拖曳移動）</span>
+                                  <button
+                                    onClick={() => setPdfAnnotations((prev) => prev.filter((a) => a.id !== note.id))}
+                                  >
+                                    <Icon name="x" className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                {isEditing ? (
+                                  <textarea
+                                    value={note.text}
+                                    autoFocus
+                                    rows={3}
+                                    onChange={(e) =>
+                                      setPdfAnnotations((prev) =>
+                                        prev.map((a) => (a.id === note.id ? { ...a, text: e.target.value } : a))
+                                      )
+                                    }
+                                    onBlur={() => setEditingStickyId(null)}
+                                    className="w-full bg-white/75 rounded p-1 text-xs outline-none resize-none"
+                                  />
+                                ) : (
+                                  <div onClick={() => setEditingStickyId(note.id)} className="whitespace-pre-wrap break-words cursor-text min-h-[36px]">
+                                    {note.text}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </section>
+                )}
+              </>
             )}
 
-            {/* 右側可收合側邊欄：問問 AI (模型與思考程度切換 + 歷史紀錄) & 重點筆記 */}
+            {/* 右側可收合側邊欄：問問 AI & 重點筆記 */}
             {showRightSidebar && (
               <aside
                 style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
@@ -3312,7 +3152,6 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
 
                 {sidebarTab === 'ai' ? (
                   <>
-                    {/* 模型與思考程度選擇器 */}
                     <div className="px-3 py-2.5 border-b grid grid-cols-2 gap-2 text-xs" style={{ borderColor: 'var(--border-color)' }}>
                       <div>
                         <label className="text-[10px] block mb-1" style={{ color: 'var(--text-muted)' }}>
@@ -3347,7 +3186,6 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                       </div>
                     </div>
 
-                    {/* 對話歷史紀錄區 */}
                     <div className="flex-1 overflow-y-auto p-3.5 space-y-3 text-xs leading-relaxed">
                       {chatMessages.map((msg) => (
                         <div
@@ -3397,7 +3235,6 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                       <div ref={chatEndRef} />
                     </div>
 
-                    {/* 引用句子預覽與圓角輸入列 */}
                     <form onSubmit={handleSendChat} className="p-3 border-t space-y-2" style={{ borderColor: 'var(--border-color)' }}>
                       {quotedContext && (
                         <div
@@ -3495,7 +3332,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
               }}
               className="fixed z-50 w-[335px] sm:w-[390px] rounded-2xl border p-3.5 shadow-2xl space-y-2.5"
             >
-              {/* 反白即翻區塊 (不讀前後文極速直譯) */}
+              {/* 反白即翻區塊 (免金鑰公開字典極速直譯) */}
               {settings.instantTranslate && (
                 <div
                   style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
@@ -3504,27 +3341,23 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-[10px] font-bold flex items-center gap-1" style={{ color: 'var(--warn)' }}>
                       <Icon name="zap" className="w-3 h-3" />
-                      <span>反白即翻（快速直譯）</span>
+                      <span>反白即翻（免金鑰快速字典）</span>
                     </span>
                     <button onClick={() => setSelectionPopover(null)} className="opacity-60 hover:opacity-100">
                       <Icon name="x" className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   {selectionPopover.quickLoading ? (
-                    <p className="py-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>快速直譯中...</p>
+                    <p className="py-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>字典查詢中...</p>
                   ) : selectionPopover.quickError ? (
-                    <button
-                      onClick={() => setShowAccountModal(true)}
-                      className="text-[11px] underline text-left"
-                      style={{ color: 'var(--warn)' }}
-                    >
+                    <p className="text-[11px]" style={{ color: 'var(--warn)' }}>
                       {selectionPopover.quickError}
-                    </button>
+                    </p>
                   ) : selectionPopover.quickResult ? (
                     <div>
                       <p className="font-semibold text-sm leading-snug">{selectionPopover.quickResult.translation}</p>
                       {selectionPopover.quickResult.posOrNote && (
-                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        <p className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                           {selectionPopover.quickResult.posOrNote}
                         </p>
                       )}
@@ -3533,7 +3366,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                 </div>
               )}
 
-              {/* 操作列：莫蘭迪 4 色重點 + 語境深譯 + 問問 AI */}
+              {/* 操作列：莫蘭迪 4 色重點 + 語境深譯 (Gemini) + 問問 AI (側欄) */}
               <div className="flex items-center justify-between gap-1.5 flex-wrap">
                 <div className="flex items-center gap-1.5">
                   {MARKER_COLORS.map((c) => (
@@ -3612,7 +3445,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
             </div>
           )}
 
-          {/* 帳號與 AI 連線設定視窗 (支援 Google Gemini & OpenAI ChatGPT 雙引擎與獨立空間隔離) */}
+          {/* 帳號與 AI 連線設定視窗 */}
           {showAccountModal && (
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
               <div
@@ -3623,7 +3456,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                   <div>
                     <h2 className="text-sm font-bold">個人獨立空間與 Google Gemini / ChatGPT 連線設定</h2>
                     <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      分享 GitHub 網址給朋友時，每個人的書庫、筆記與金鑰均獨立保存在各自裝置瀏覽器中
+                      「反白即翻」已內建免費高速字典；此處設定的金鑰僅用於「語境深譯」、「AI 側欄」與「圖片 OCR」
                     </p>
                   </div>
                   <button onClick={() => setShowAccountModal(false)} className="p-1 opacity-70 hover:opacity-100">
@@ -3631,7 +3464,6 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                   </button>
                 </div>
 
-                {/* 資料隔離說明 */}
                 <div
                   style={{ backgroundColor: 'var(--accent-soft)', borderColor: 'var(--accent)' }}
                   className="rounded-xl border p-3 text-xs flex items-start gap-2.5"
@@ -3642,9 +3474,8 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                   </div>
                 </div>
 
-                {/* 選擇 AI 服務引擎 */}
                 <div className="space-y-2.5">
-                  <label className="text-xs font-semibold block">步驟 1：選擇您要使用的 AI 帳號引擎</label>
+                  <label className="text-xs font-semibold block">選擇深度語境翻譯與側欄問答的 AI 引擎</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -3656,7 +3487,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                       }}
                       className="py-2.5 px-3 rounded-xl border text-xs font-semibold transition"
                     >
-                      Google Gemini (可免費領取)
+                      Google Gemini 3.8
                     </button>
                     <button
                       type="button"
@@ -3683,7 +3514,7 @@ const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
                           style={{ color: 'var(--accent-text)' }}
                           className="text-[11px] underline flex items-center gap-1"
                         >
-                          <span>登入 Google 帳號免費領取金鑰</span>
+                          <span>前往 Google AI Studio 取得金鑰</span>
                           <Icon name="external" className="w-3 h-3" />
                         </a>
                       </div>
