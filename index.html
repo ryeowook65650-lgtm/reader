@@ -769,7 +769,7 @@
         return { text: content.trim(), thought: '' };
       }
 
-      // 預設使用 Google Gemini API
+// 預設使用 Google Gemini API（極速秒回優化版）
       if (!geminiKey) {
         throw new Error('請先點右上角「帳號與 AI 連線」，貼上您個人的免費 Google Gemini API Key');
       }
@@ -793,8 +793,12 @@
         generationConfig.responseMimeType = 'application/json';
         if (geminiJsonSchema) generationConfig.responseSchema = geminiJsonSchema;
       }
-      if (effectiveModel.includes('2.5') && typeof thinkingLevelObj?.geminiBudget === 'number') {
+
+      // 明確設定思考預算（Thinking Budget）：若為直覺秒回或 0 則不進行推演
+      if (typeof thinkingLevelObj?.geminiBudget === 'number') {
         generationConfig.thinkingConfig = { thinkingBudget: thinkingLevelObj.geminiBudget };
+      } else {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
       }
 
       const res = await fetch(url, {
@@ -1898,76 +1902,72 @@
       };
 
       // =======================================================================
-      // 反白即翻 (極速直譯) + 長按選單 + 語境深譯 (嚴謹學科脈絡翻譯)
-      // =======================================================================
-      const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
-        const cleanKey = selectedText.trim().slice(0, 400);
-        if (!cleanKey) return;
+// ⚡ 極速直譯：取消 JSON Schema，改為純文字超短提示詞秒回 + 本地快取
+const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
+  const cleanKey = selectedText.trim().slice(0, 300);
+  if (!cleanKey) return;
 
-        const cached = quickTransCacheRef.current[cleanKey];
-        if (cached) {
-          setSelectionPopover((prev) =>
-            prev && prev.quote === selectedText
-              ? { ...prev, quickLoading: false, quickResult: cached, quickError: '' }
-              : prev
-          );
-          return;
-        }
+  // 1. 命中快取：0 毫秒直接顯示
+  const cached = quickTransCacheRef.current[cleanKey];
+  if (cached) {
+    setSelectionPopover((prev) =>
+      prev && prev.quote === selectedText
+        ? { ...prev, quickLoading: false, quickResult: cached, quickError: '' }
+        : prev
+    );
+    return;
+  }
 
-        if (!hasActiveApiKey) {
-          setSelectionPopover((prev) =>
-            prev
-              ? { ...prev, quickLoading: false, quickError: '請點右上角「帳號與 AI 連線」設定個人金鑰以啟用翻譯' }
-              : null
-          );
-          return;
-        }
+  if (!hasActiveApiKey) {
+    setSelectionPopover((prev) =>
+      prev
+        ? { ...prev, quickLoading: false, quickError: '請點右上角設定 API Key' }
+        : null
+    );
+    return;
+  }
 
-        const reqId = ++quickReqIdRef.current;
-        setSelectionPopover((prev) =>
-          prev ? { ...prev, quickLoading: true, quickResult: null, quickError: '' } : null
-        );
+  const reqId = ++quickReqIdRef.current;
+  setSelectionPopover((prev) =>
+    prev ? { ...prev, quickLoading: true, quickResult: null, quickError: '' } : null
+  );
 
-        try {
-          const geminiSchema = {
-            type: 'OBJECT',
-            properties: {
-              translation: { type: 'STRING' },
-              posOrNote: { type: 'STRING' }
-            },
-            required: ['translation']
-          };
+  try {
+    // 極簡提示詞，直接回傳純文字，不走耗時的 JSON 格式解析
+    const prompt = `將下列文字極速直譯為繁體中文（如已是中文則簡釋）："${cleanKey}"。請直接回傳譯文，勿加任何引號、前綴或說明。`;
 
-          const { text } = await callUnifiedAI({
-            provider: aiProvider,
-            geminiKey: geminiApiKey,
-            openaiKey: openaiApiKey,
-            model: aiProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-3.8-flash',
-            systemInstruction:
-              '你是極速直譯字典。請不讀前後文，直接將使用者選取的詞語或句子快速翻譯為自然繁體中文（若原文為中文則給出精煉白話釋義）。請回傳 JSON：{"translation":"直譯結果","posOrNote":"詞性或12字內補充"}。',
-            messages: [{ role: 'user', text: cleanKey }],
-            thinkingLevelObj: THINKING_LEVELS[0],
-            expectJson: true,
-            geminiJsonSchema: geminiSchema
-          });
+    const { text } = await callUnifiedAI({
+      provider: aiProvider,
+      geminiKey: geminiApiKey,
+      openaiKey: openaiApiKey,
+      model: aiProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-3.8-flash',
+      systemInstruction: '你是極速即時字典。直接輸出繁體中文釋義，回答越簡短越好。',
+      messages: [{ role: 'user', text: prompt }],
+      thinkingLevelObj: THINKING_LEVELS[0], // 關閉思考過程，追求秒回
+      expectJson: false // 關鍵：關閉 JSON 解析以大幅提速
+    });
 
-          if (reqId !== quickReqIdRef.current) return;
-          const parsed = JSON.parse(text);
-          quickTransCacheRef.current[cleanKey] = parsed;
-          const keys = Object.keys(quickTransCacheRef.current);
-          if (keys.length > 250) delete quickTransCacheRef.current[keys[0]];
-          idbSetScopedKV(currentOwnerUid, 'quickTransCache', quickTransCacheRef.current);
+    if (reqId !== quickReqIdRef.current) return;
 
-          setSelectionPopover((prev) =>
-            prev ? { ...prev, quickLoading: false, quickResult: parsed } : null
-          );
-        } catch (err) {
-          if (reqId !== quickReqIdRef.current) return;
-          setSelectionPopover((prev) =>
-            prev ? { ...prev, quickLoading: false, quickError: err.message } : null
-          );
-        }
-      }, [aiProvider, geminiApiKey, openaiApiKey, hasActiveApiKey, currentOwnerUid]);
+    const resultObj = {
+      translation: text.replace(/^["'「」]+|["'「」]+$/g, '').trim(),
+      posOrNote: ''
+    };
+
+    // 寫入快取
+    quickTransCacheRef.current[cleanKey] = resultObj;
+    idbSetScopedKV(currentOwnerUid, 'quickTransCache', quickTransCacheRef.current);
+
+    setSelectionPopover((prev) =>
+      prev ? { ...prev, quickLoading: false, quickResult: resultObj } : null
+    );
+  } catch (err) {
+    if (reqId !== quickReqIdRef.current) return;
+    setSelectionPopover((prev) =>
+      prev ? { ...prev, quickLoading: false, quickError: err.message || '查詢逾時' } : null
+    );
+  }
+}, [aiProvider, geminiApiKey, openaiApiKey, hasActiveApiKey, currentOwnerUid]);
 
       const openSelectionMenu = useCallback(({ quote, lineObj, lineIndex, clientX, clientY }) => {
         const cleaned = (quote || '').trim();
@@ -1998,9 +1998,14 @@
         });
 
         if (settings.instantTranslate) {
+        if (window._transDebounceTimer) clearTimeout(window._transDebounceTimer);
+        window._transDebounceTimer = setTimeout(() => {
           triggerQuickInstantTranslate(cleaned);
-        }
-      }, [currentPdfPage, settings.instantTranslate, triggerQuickInstantTranslate]);
+        }, 200);
+      }
+    },
+    [currentPdfPage, settings.instantTranslate, triggerQuickInstantTranslate]
+  );
 
       const handleLineMouseUp = (e, lineObj, idx) => {
         if (longPressTimerRef.current) {
