@@ -943,6 +943,7 @@
       const [pdfZoom, setPdfZoom] = useState(1.15);
       const [pdfTool, setPdfTool] = useState('cursor');
       const [activeBrushColor, setActiveBrushColor] = useState('ochre');
+      const [drawMode, setDrawMode] = useState('free'); // 'free' (自由線條) | 'line' (直線)
       const [pdfSpotlightRuler, setPdfSpotlightRuler] = useState(false);
       const [rulerYRatio, setRulerYRatio] = useState(0.38);
       const [editingStickyId, setEditingStickyId] = useState(null);
@@ -1437,15 +1438,17 @@
         }
 
         if (pdfTool === 'pen' || pdfTool === 'marker') {
-          drawingStrokeRef.current = {
-            id: `stroke-${Date.now()}`,
-            page: currentPdfPage,
-            type: pdfTool,
-            colorId: activeBrushColor,
-            points: [pt]
-          };
-          redrawAnnotationOverlay();
-        }
+  const isStraight = drawMode === 'line' || e.shiftKey;
+  drawingStrokeRef.current = {
+    id: `stroke-${Date.now()}`,
+    page: currentPdfPage,
+    type: pdfTool,
+    colorId: activeBrushColor,
+    isStraight: isStraight,
+    points: [pt, pt] // 起點與終點
+  };
+  redrawAnnotationOverlay();
+}
       };
 
       const handleOverlayPointerMove = (e) => {
@@ -1465,8 +1468,25 @@
           return;
         }
         if (!drawingStrokeRef.current) return;
-        drawingStrokeRef.current.points.push(pt);
-        redrawAnnotationOverlay();
+const stroke = drawingStrokeRef.current;
+const isStraight = stroke.isStraight || e.shiftKey;
+
+if (isStraight) {
+  // 直線模式：保留起點，更新終點（若按住 Shift 鍵可鎖定完全水平或垂直）
+  const startPt = stroke.points[0];
+  let endPt = { ...pt };
+  if (e.shiftKey) {
+    const dx = Math.abs(endPt.x - startPt.x);
+    const dy = Math.abs(endPt.y - startPt.y);
+    if (dx > dy) endPt.y = startPt.y; // 鎖定水平線
+    else endPt.x = startPt.x;        // 鎖定垂直線
+  }
+  stroke.points = [startPt, endPt];
+} else {
+  // 自由線條模式
+  stroke.points.push(pt);
+}
+redrawAnnotationOverlay();
       };
 
       const handleOverlayPointerUp = () => {
@@ -2970,6 +2990,24 @@
                           { id: 'note', label: '便利貼', icon: 'note' },
                           { id: 'eraser', label: '橡皮擦', icon: 'eraser' }
                         ].map((tool) => {
+                          {/* 直線 / 自由線 切換開關 */}
+{(pdfTool === 'marker' || pdfTool === 'pen') && (
+  <button
+    onClick={() => setDrawMode((m) => (m === 'line' ? 'free' : 'line'))}
+    style={
+      drawMode === 'line'
+        ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
+        : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
+    }
+    className="h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1 border transition"
+    title="切換直線模式（繪製時按住 Shift 鍵亦可自動拉直）"
+  >
+    <span>直線</span>
+    <span className="text-[10px] opacity-75">
+      {drawMode === 'line' ? 'ON' : 'OFF'}
+    </span>
+  </button>
+)}
                           const active = pdfTool === tool.id;
                           return (
                             <button
