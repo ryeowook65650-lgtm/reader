@@ -3,22 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ADHD 專注閱讀器</title>
+  <title>ADHD 專注閱讀器 — 深度筆記強化版</title>
 
-  <!-- 字體載入 -->
+  <!-- Google Fonts: 護眼無襯線、襯線與等寬字體 -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@400;600;700&display=swap" rel="stylesheet" />
 
-  <!-- Tailwind CSS -->
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- PDF.js (多頁文字精準座標解析與畫布渲染) & pdf-lib (匯出含標註與筆記附錄之 PDF) -->
+  <!-- PDF.js 與 PDF-Lib CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-
-  <!-- Google Identity Services (選用原生 Google 登入識別) -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <!-- React 18 & Babel Standalone -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -27,11 +24,11 @@
 
   <style>
     /* =========================================================================
-       零螢光色、無純黑眩光之莫蘭迪護眼主題變數
+       莫蘭迪護眼主題變數（無螢光、低飽和）
        ========================================================================= */
     :root, .theme-slate {
       --bg-app: #1f2328;
-      --bg-header: rgba(36, 41, 47, 0.92);
+      --bg-header: rgba(36, 41, 47, 0.94);
       --bg-panel: #262b32;
       --bg-subtle: #30363f;
       --bg-active-card: #2b313a;
@@ -49,7 +46,7 @@
 
     .theme-paper {
       --bg-app: #f2efe9;
-      --bg-header: rgba(248, 246, 241, 0.92);
+      --bg-header: rgba(248, 246, 241, 0.94);
       --bg-panel: #faf8f4;
       --bg-subtle: #e6e1d7;
       --bg-active-card: #ffffff;
@@ -67,7 +64,7 @@
 
     .theme-sepia {
       --bg-app: #ebe2d3;
-      --bg-header: rgba(241, 233, 219, 0.92);
+      --bg-header: rgba(241, 233, 219, 0.94);
       --bg-panel: #f5ede0;
       --bg-subtle: #dfd3bf;
       --bg-active-card: #faf5ec;
@@ -85,7 +82,7 @@
 
     .theme-sage {
       --bg-app: #1d2320;
-      --bg-header: rgba(34, 41, 38, 0.92);
+      --bg-header: rgba(34, 41, 38, 0.94);
       --bg-panel: #242c28;
       --bg-subtle: #2e3833;
       --bg-active-card: #29332e;
@@ -119,6 +116,48 @@
       cursor: pointer;
     }
 
+    /* ADHD 呼吸定位高波動畫 */
+    @keyframes pulseFocusRing {
+      0% { box-shadow: 0 0 0 0 rgba(94, 122, 148, 0.6); }
+      50% { box-shadow: 0 0 0 6px rgba(94, 122, 148, 0.25); }
+      100% { box-shadow: 0 0 0 0 rgba(94, 122, 148, 0); }
+    }
+    .pulse-target {
+      animation: pulseFocusRing 0.85s ease-out 2;
+    }
+
+    /* 網頁專注純文字版 PDF 列印/匯出專用 CSS */
+    @media print {
+      body {
+        background: #fff !important;
+        color: #111 !important;
+      }
+      header, aside, .no-print, [role="toolbar"], .fixed {
+        display: none !important;
+      }
+      main {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+      .print-page-break {
+        page-break-before: always;
+      }
+      mark {
+        background-color: #fef08a !important;
+        color: #000 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .inline-note-print {
+        border-left: 3px solid #5e7a94 !important;
+        background: #f8fafc !important;
+        color: #334155 !important;
+        display: block !important;
+      }
+    }
+
     ::-webkit-scrollbar { width: 7px; height: 7px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
@@ -139,7 +178,7 @@
     }
 
     // =========================================================================
-    // 1. 統一線寬 SVG 圖示庫
+    // 1. 簡潔 SVG 圖示組件
     // =========================================================================
     function Icon({ name, className = 'w-4 h-4' }) {
       const paths = {
@@ -179,7 +218,13 @@
         camera: <><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></>,
         bookmark: <><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></>,
         chat: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>,
-        external: <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>,
+        pin: <><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></>,
+        locate: <><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></>,
+        printer: <><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></>,
+        tag: <><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><circle cx="7" cy="7" r=".5" fill="currentColor"/></>,
+        backup: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+        restore: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>,
+        edit: <><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></>,
         logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>
       };
       return (
@@ -220,10 +265,18 @@
     }
 
     // =========================================================================
-    // 2. 本機 IndexedDB 永久儲存引擎 (依帳號 UID 完全獨立隔離書庫、PDF 與筆記)
+    // 2. 本機 IndexedDB 與持久保存儲存引擎 (支援 Persistence API)
     // =========================================================================
-    const IDB_NAME = 'ADHDFocusReaderClean_v2';
+    const IDB_NAME = 'ADHDFocusReader_v3_Ultimate';
     const IDB_VERSION = 1;
+
+    async function requestStoragePersistence() {
+      if (navigator.storage && navigator.storage.persist) {
+        const isPersisted = await navigator.storage.persist();
+        return isPersisted;
+      }
+      return false;
+    }
 
     function openReaderDB() {
       return new Promise((resolve, reject) => {
@@ -330,7 +383,7 @@
     }
 
     // =========================================================================
-    // 3. 莫蘭迪低飽和色票、主題與 AI 模型設定 (完全無螢光色)
+    // 3. 莫蘭迪低飽和色票、主題與雙 AI 模型選項
     // =========================================================================
     const THEMES = {
       slate: { name: '霧夜深岩', className: 'theme-slate', isDark: true },
@@ -346,10 +399,12 @@
       { id: 'terracotta', name: '陶土粉', hex: '#b8847d', bgLight: 'rgba(184, 132, 125, 0.30)', bgDark: 'rgba(184, 132, 125, 0.25)', rgb: [0.72, 0.52, 0.49] }
     ];
 
+    const DEFAULT_NOTE_TAGS = ['重要概念', '核心論證', '專業術語', '待深入考證', '靈感筆記'];
+
     const PROVIDER_MODELS = {
       gemini: [
         { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (最新極速)' },
-        { id: 'gemini-3.8-pro', label: 'Gemini 3.8 Pro (嚴謹學術深思)' }
+        { id: 'gemini-3.8-pro', label: 'Gemini 3.8 Pro (嚴謹深思)' }
       ],
       openai: [
         { id: 'gpt-4o-mini', label: 'GPT-4o mini (輕快直覺)' },
@@ -386,12 +441,12 @@
         model: 'AI 閱讀助理',
         thinkingLabel: '就緒',
         content:
-          '歡迎使用 ADHD 專注閱讀器！\n\n• 反白選字或長按詞句 0.4 秒：「反白即翻」會走免金鑰高速字典秒回；需要嚴謹前後文脈絡時請點「語境深譯」。\n• 點選「問問 AI」：可將選中詞句帶入側邊欄，自由切換模型與思考程度深入提問。'
+          '歡迎使用 ADHD 專注閱讀器（深度筆記強化版）！\n\n• 反白選字：立即顯示「反白即翻」免金鑰直譯；點擊「語境深譯」連接前後文嚴謹解析。\n• 行間即時筆記：點擊句子旁的「+ 筆記」直接原地寫筆記，不被打斷心流。\n• 側邊欄重點筆記：可直接點擊筆記卡片編輯文字，點右下角「跳回該段落」自動平滑置中並高亮閃爍！\n• 側邊欄回答旁點「📌 釘選」：可將 AI 的精彩解釋直接收錄為該段重點筆記。'
       }
     ];
 
     // =========================================================================
-    // 4. 多頁文字型 PDF 解析、免金鑰極速字典與 AI 雙引擎呼叫函式
+    // 4. 文字分句、PDF 座標解析、免金鑰極速字典與 AI 呼叫
     // =========================================================================
     function formatFileSize(bytes) {
       if (!bytes || bytes <= 0) return 'PDF 檔案';
@@ -422,7 +477,6 @@
       return merged;
     }
 
-    // 多頁文字 PDF 精準解析引擎 (支援 CMap、Y/X 座標排序、跨行連字號接合與標題辨識)
     async function extractStructuredPagesFromPdf(pdfDoc, filterHeaderFooter = true, onProgress = null) {
       const pages = [];
       let totalCharCount = 0;
@@ -562,9 +616,8 @@
       return { pages, totalCharCount };
     }
 
-    // 免金鑰高速字典直譯通道 (完全不消耗 Gemini / OpenAI API 額度)
+    // 免金鑰快速直譯字典通道 (不耗費 AI 額度)
     async function fetchKeylessInstantDictionary(queryText) {
-      // 通道 1：公開字典與快速直譯介面 (50~150ms 極速回應，單字自動附帶詞性與多義項)
       try {
         const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-TW&dt=t&dt=bd&q=${encodeURIComponent(queryText)}`;
         const res = await fetch(gtxUrl);
@@ -580,32 +633,22 @@
               .map((entry) => `${entry[0]}：${(entry[1] || []).slice(0, 4).join('、')}`)
               .join(' ｜ ');
           }
-          if (mainTrans) {
-            return { translation: mainTrans, posOrNote: posNote };
-          }
+          if (mainTrans) return { translation: mainTrans, posOrNote: posNote };
         }
-      } catch {
-        // 自動降級至備用字典通道
-      }
+      } catch {}
 
-      // 通道 2：MyMemory 開放翻譯字典備援
-      const isAsciiLang = /^[A-Za-z0-9\s.,'?!:;()-]+$/.test(queryText);
-      const langPair = isAsciiLang ? 'en|zh-TW' : 'autodetect|zh-TW';
+      const isAscii = /^[A-Za-z0-9\s.,'?!:;()-]+$/.test(queryText);
       const mmRes = await fetch(
-        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${langPair}`
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${isAscii ? 'en|zh-TW' : 'autodetect|zh-TW'}`
       );
-      if (!mmRes.ok) {
-        throw new Error('免費字典通道暫時忙碌，請直接點下方「語境深譯」');
-      }
+      if (!mmRes.ok) throw new Error('免費字典通道忙碌，請點下方「語境深譯」');
       const mmData = await mmRes.json();
       const mmText = mmData?.responseData?.translatedText?.trim();
-      if (!mmText) {
-        throw new Error('查無直譯結果，請點下方「語境深譯」');
-      }
+      if (!mmText) throw new Error('查無直譯結果');
       return { translation: mmText, posOrNote: '' };
     }
 
-    // 雙引擎 AI 呼叫介面 (專門用於「語境深譯」、「問問 AI 側欄」與「圖片 OCR」)
+    // 呼叫個人 Gemini 3.8 / OpenAI Key
     async function callUnifiedAI({
       provider = 'gemini',
       geminiKey = '',
@@ -618,83 +661,47 @@
       geminiJsonSchema = null
     }) {
       if (provider === 'openai') {
-        if (!openaiKey) {
-          throw new Error('請先點右上角「帳號與 AI 連線」，貼上您的 OpenAI (ChatGPT) API Key');
-        }
+        if (!openaiKey) throw new Error('請先在「帳號與 AI 連線」設定 OpenAI API Key');
         const effectiveModel = model.startsWith('gpt-') || model.startsWith('o') ? model : 'gpt-4o-mini';
-        const isReasoningModel = effectiveModel.startsWith('o');
+        const isReasoning = effectiveModel.startsWith('o');
 
         const apiMessages = [];
         if (systemInstruction) {
           apiMessages.push({
-            role: isReasoningModel ? 'developer' : 'system',
-            content: expectJson ? `${systemInstruction}\n請務必只回傳合法的 JSON 物件。` : systemInstruction
+            role: isReasoning ? 'developer' : 'system',
+            content: expectJson ? `${systemInstruction}\n請回傳合法 JSON 物件。` : systemInstruction
           });
         }
-
         for (const m of messages) {
-          if (m.imageBase64) {
-            apiMessages.push({
-              role: m.role === 'assistant' ? 'assistant' : 'user',
-              content: [
-                { type: 'text', text: m.text },
-                { type: 'image_url', image_url: { url: `data:image/png;base64,${m.imageBase64}` } }
-              ]
-            });
-          } else {
-            apiMessages.push({
-              role: m.role === 'assistant' ? 'assistant' : 'user',
-              content: m.text
-            });
-          }
+          apiMessages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text });
         }
-
-        const payload = {
-          model: effectiveModel,
-          messages: apiMessages,
-          ...(expectJson ? { response_format: { type: 'json_object' } } : {}),
-          ...(isReasoningModel && thinkingLevelObj?.openaiEffort
-            ? { reasoning_effort: thinkingLevelObj.openaiEffort }
-            : {})
-        };
 
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${openaiKey}`
-          },
-          body: JSON.stringify(payload)
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+          body: JSON.stringify({
+            model: effectiveModel,
+            messages: apiMessages,
+            ...(expectJson ? { response_format: { type: 'json_object' } } : {}),
+            ...(isReasoning && thinkingLevelObj?.openaiEffort ? { reasoning_effort: thinkingLevelObj.openaiEffort } : {})
+          })
         });
-
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data?.error?.message || `OpenAI 連線錯誤 (HTTP ${res.status})`);
-        }
-        const content = data?.choices?.[0]?.message?.content || '';
-        return { text: content.trim(), thought: '' };
+        if (!res.ok) throw new Error(data?.error?.message || `OpenAI 錯誤 (${res.status})`);
+        return { text: data?.choices?.[0]?.message?.content?.trim() || '', thought: '' };
       }
 
-      // Google Gemini API (支援 gemini-3.8-flash / gemini-3.8-pro)
-      if (!geminiKey) {
-        throw new Error('請先點右上角「帳號與 AI 連線」，貼上您的 Google Gemini API Key');
-      }
+      // Gemini
+      if (!geminiKey) throw new Error('請先在「帳號與 AI 連線」設定 Google Gemini API Key');
       const effectiveModel = model.startsWith('gemini-') ? model : 'gemini-3.8-flash';
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${effectiveModel}:generateContent?key=${encodeURIComponent(geminiKey)}`;
 
-      const contents = messages.map((m) => {
-        const parts = [];
-        if (m.imageBase64) {
-          parts.push({ inlineData: { mimeType: 'image/png', data: m.imageBase64 } });
-        }
-        parts.push({ text: m.text });
-        return {
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts
-        };
-      });
+      const contents = messages.map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.text }]
+      }));
 
-      const buildBody = (includeThinking) => {
+      const buildPayload = (includeThinking) => {
         const generationConfig = {};
         if (expectJson) {
           generationConfig.responseMimeType = 'application/json';
@@ -713,25 +720,22 @@
       let res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildBody(true))
+        body: JSON.stringify(buildPayload(true))
       });
 
-      // 若特定模型端點不支援 thinkingConfig 參數，自動無縫降級重送一次
       if (res.status === 400) {
         const errCheck = await res.clone().json().catch(() => ({}));
         if (/thinking/i.test(errCheck?.error?.message || '')) {
           res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildBody(false))
+            body: JSON.stringify(buildPayload(false))
           });
         }
       }
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error?.message || `Gemini 連線錯誤 (HTTP ${res.status})`);
-      }
+      if (!res.ok) throw new Error(data?.error?.message || `Gemini 連線錯誤 (${res.status})`);
 
       const parts = data?.candidates?.[0]?.content?.parts || [];
       let thoughtText = '';
@@ -743,166 +747,30 @@
       return { text: answerText.trim(), thought: thoughtText.trim() };
     }
 
-    // 將重點筆記分頁渲染成高解析度圖片嵌入匯出的 PDF
-    function renderNotesPagesToPngDataUrls(title, highlights) {
-      const chunks = [];
-      const pageSize = 10;
-      for (let i = 0; i < highlights.length; i += pageSize) {
-        chunks.push(highlights.slice(i, i + pageSize));
-      }
-
-      return chunks.map((chunk, pageIdx) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1190;
-        canvas.height = 1684;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#faf8f4';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = '#2c353d';
-        ctx.font = 'bold 34px "Noto Sans TC", system-ui, sans-serif';
-        ctx.fillText(
-          `重點標註與語境筆記總整理 (${pageIdx + 1} / ${chunks.length})`,
-          80,
-          96
-        );
-
-        ctx.fillStyle = '#687078';
-        ctx.font = '22px "Noto Sans TC", system-ui, sans-serif';
-        ctx.fillText(`文獻：${(title || '').slice(0, 50)}`, 80, 140);
-
-        ctx.strokeStyle = '#d6cfc2';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(80, 166);
-        ctx.lineTo(1110, 166);
-        ctx.stroke();
-
-        let y = 215;
-        const maxWidth = 1000;
-
-        const drawWrapped = (text, x, startY, lineH, font, color) => {
-          ctx.font = font;
-          ctx.fillStyle = color;
-          let line = '';
-          let currY = startY;
-          for (const ch of Array.from(text || '')) {
-            if (ch === '\n') {
-              ctx.fillText(line, x, currY);
-              line = '';
-              currY += lineH;
-              continue;
-            }
-            if (ctx.measureText(line + ch).width > maxWidth && line) {
-              ctx.fillText(line, x, currY);
-              line = ch;
-              currY += lineH;
-              if (currY > 1590) return currY;
-            } else {
-              line += ch;
-            }
-          }
-          if (line && currY <= 1590) {
-            ctx.fillText(line, x, currY);
-            currY += lineH;
-          }
-          return currY;
-        };
-
-        chunk.forEach((hl, idx) => {
-          if (y > 1530) return;
-          const cObj = MARKER_COLORS.find((c) => c.id === hl.colorId) || MARKER_COLORS[0];
-          ctx.fillStyle = cObj.hex;
-          ctx.fillRect(80, y - 22, 9, 30);
-
-          const globalNum = pageIdx * pageSize + idx + 1;
-          y = drawWrapped(
-            `${globalNum}. [P.${hl.pageNumber || 1}] "${hl.quote}"`,
-            104,
-            y,
-            32,
-            'bold 22px "Noto Sans TC", system-ui, sans-serif',
-            '#2b2e33'
-          );
-          if (hl.note) {
-            y = drawWrapped(
-              `↳ ${hl.note}`,
-              104,
-              y + 4,
-              30,
-              '20px "Noto Sans TC", system-ui, sans-serif',
-              '#4d5359'
-            );
-          }
-          y += 20;
-        });
-
-        return canvas.toDataURL('image/png');
-      });
-    }
-
-    function decodeJwtPayload(token) {
-      try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-          atob(base64)
-            .split('')
-            .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-            .join('')
-        );
-        return JSON.parse(jsonPayload);
-      } catch {
-        return null;
-      }
-    }
-
     // =========================================================================
-    // 5. 主應用程式元件 App
+    // 5. 主應用程式組件 App
     // =========================================================================
     function App() {
-      // 獨立帳號空間狀態
+      // 帳號空間狀態
       const [accountProfile, setAccountProfile] = useState(null);
       const [switchEmailDraft, setSwitchEmailDraft] = useState('');
-      const [googleClientId, setGoogleClientId] = useState('');
-      const [googleClientIdDraft, setGoogleClientIdDraft] = useState('');
-
       const currentOwnerUid = useMemo(() => accountProfile?.uid || 'local-owner', [accountProfile]);
-      const currentAccountDisplay = useMemo(() => {
-        if (accountProfile) {
-          return {
-            isCustom: true,
-            name: accountProfile.name || accountProfile.email.split('@')[0],
-            email: accountProfile.email
-          };
-        }
-        return {
-          isCustom: false,
-          name: '本機獨立空間',
-          email: '資料僅存於您目前裝置瀏覽器，與他人完全隔離'
-        };
-      }, [accountProfile]);
 
-      // 雙 AI 引擎設定狀態 (專供「語境深譯」與「AI 側欄 / OCR」使用)
+      // 雙 AI 引擎狀態
       const [aiProvider, setAiProvider] = useState('gemini');
       const [geminiApiKey, setGeminiApiKey] = useState('');
       const [openaiApiKey, setOpenaiApiKey] = useState('');
       const [geminiKeyDraft, setGeminiKeyDraft] = useState('');
       const [openaiKeyDraft, setOpenaiKeyDraft] = useState('');
 
-      // 選填本機 PIN 碼鎖
+      // PIN 碼螢幕鎖
       const [pinCode, setPinCode] = useState('');
       const [pinDraft, setPinDraft] = useState('');
       const [isLocked, setIsLocked] = useState(false);
       const [unlockInput, setUnlockInput] = useState('');
       const [unlockError, setUnlockError] = useState('');
 
-      // 資料庫與匯入狀態
-      const [dbInitialized, setDbInitialized] = useState(false);
-      const [importProgressText, setImportProgressText] = useState('');
-      const [toastMsg, setToastMsg] = useState('');
-
-      // 書庫與當前文獻 (預設空白，無寫死範例文章)
+      // 書庫與當前文獻
       const [libraryDocs, setLibraryDocs] = useState([]);
       const [activeDocId, setActiveDocId] = useState(null);
       const [docMeta, setDocMeta] = useState({
@@ -915,7 +783,7 @@
       const [docPages, setDocPages] = useState([]);
       const [pdfBytes, setPdfBytes] = useState(null);
 
-      // 閱讀介面與控制面板狀態
+      // 閱讀介面狀態
       const [viewMode, setViewMode] = useState('focus'); // 'focus' | 'split' | 'pdf'
       const [settings, setSettings] = useState(DEFAULT_SETTINGS);
       const [showLibraryMenu, setShowLibraryMenu] = useState(false);
@@ -925,32 +793,41 @@
       const [sidebarTab, setSidebarTab] = useState('ai'); // 'ai' | 'highlights'
       const [showAccountModal, setShowAccountModal] = useState(false);
 
-      // ADHD 聚光燈與自動播放
+      // ADHD 聚光燈與自動換行播放
       const [activeLineIdx, setActiveLineIdx] = useState(0);
       const [isAutoPlaying, setIsAutoPlaying] = useState(false);
       const [autoPlayProgress, setAutoPlayProgress] = useState(0);
+      const [pulseLineId, setPulseLineId] = useState(null);
 
-      // 長按與反白懸浮視窗
+      // 行內即時筆記（Inline Notes: { lineId: string, text: string }[]）
+      const [inlineNotes, setInlineNotes] = useState({});
+      const [editingInlineLineId, setEditingInlineLineId] = useState(null);
+
+      // 重點標註（Text Highlights）與標籤篩選
+      const [textHighlights, setTextHighlights] = useState([]);
+      const [selectedTagFilter, setSelectedTagFilter] = useState('ALL');
+      const [editingHlNoteId, setEditingHlNoteId] = useState(null);
+      const [editingHlDraft, setEditingHlDraft] = useState('');
+
+      // 查詞浮窗狀態
       const [selectionPopover, setSelectionPopover] = useState(null);
       const quickTransCacheRef = useRef({});
       const quickReqIdRef = useRef(0);
       const transDebounceRef = useRef(null);
 
-      // 重點標註與常規 PDF 編輯器狀態
-      const [textHighlights, setTextHighlights] = useState([]);
+      // PDF 畫布標註工具狀態
       const [pdfAnnotations, setPdfAnnotations] = useState([]);
       const [currentPdfPage, setCurrentPdfPage] = useState(1);
       const [pdfZoom, setPdfZoom] = useState(1.15);
       const [pdfTool, setPdfTool] = useState('cursor');
+      const [drawMode, setDrawMode] = useState('free'); // 'free' | 'line' (直線模式)
       const [activeBrushColor, setActiveBrushColor] = useState('ochre');
-      const [drawMode, setDrawMode] = useState('free'); // 'free' (自由線條) | 'line' (直線)
       const [pdfSpotlightRuler, setPdfSpotlightRuler] = useState(false);
       const [rulerYRatio, setRulerYRatio] = useState(0.38);
       const [editingStickyId, setEditingStickyId] = useState(null);
       const [isOcrLoading, setIsOcrLoading] = useState(false);
-      const [isExportingPdf, setIsExportingPdf] = useState(false);
 
-      // 側邊欄 AI 問答狀態 (預設使用最新 gemini-3.8-flash)
+      // 側邊欄 AI 問答狀態
       const [quotedContext, setQuotedContext] = useState(null);
       const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
       const [thinkingLevel, setThinkingLevel] = useState('medium');
@@ -958,8 +835,14 @@
       const [chatInput, setChatInput] = useState('');
       const [isChatSending, setIsChatSending] = useState(false);
 
-      // Refs
+      // 系統提示與狀態
+      const [toastMsg, setToastMsg] = useState('');
+      const [importProgressText, setImportProgressText] = useState('');
+      const [dbInitialized, setDbInitialized] = useState(false);
+
+      // DOM Refs
       const fileInputRef = useRef(null);
+      const backupInputRef = useRef(null);
       const lineRefs = useRef({});
       const pdfJsDocRef = useRef(null);
       const pdfCanvasRef = useRef(null);
@@ -969,7 +852,6 @@
       const longPressTimerRef = useRef(null);
       const chatEndRef = useRef(null);
       const toastTimerRef = useRef(null);
-      const googleBtnContainerRef = useRef(null);
 
       const currentTheme = THEMES[settings.theme] || THEMES.slate;
       const hasActiveApiKey = aiProvider === 'openai' ? Boolean(openaiApiKey) : Boolean(geminiApiKey);
@@ -978,6 +860,13 @@
         setToastMsg(msg);
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         toastTimerRef.current = setTimeout(() => setToastMsg(''), 3200);
+      }, []);
+
+      // 啟動時請求 Persistence API 保證瀏覽器資料永不被清除
+      useEffect(() => {
+        requestStoragePersistence().then((isPersisted) => {
+          if (isPersisted) console.log('瀏覽器持久儲存權限已確認');
+        });
       }, []);
 
       useEffect(() => {
@@ -991,6 +880,7 @@
         }
       }, [aiProvider, selectedModel]);
 
+      // 多頁文字扁平化為聚光燈逐句/逐段陣列
       const readingLines = useMemo(() => {
         const result = [];
         for (const page of docPages || []) {
@@ -1028,6 +918,7 @@
         }
       }, [readingLines.length, activeLineIdx]);
 
+      // 聚光燈行平滑居中捲動
       useEffect(() => {
         const currentLine = readingLines[activeLineIdx];
         if (!currentLine) return;
@@ -1046,16 +937,18 @@
         }
       }, [chatMessages, showRightSidebar, sidebarTab]);
 
-      // 載入指定文獻至工作區
+      // 載入文獻記錄
       const activateDocumentRecord = useCallback(async (docRecord, scopeUid = currentOwnerUid) => {
         setIsAutoPlaying(false);
         setSelectionPopover(null);
         setConfirmDeleteId(null);
+        setEditingInlineLineId(null);
+        setPulseLineId(null);
 
         if (!docRecord) {
           setActiveDocId(null);
           setDocMeta({
-            title: '個人書庫',
+            title: '尚未開啟文獻',
             subtitle: '請匯入 PDF 開始專注閱讀',
             filename: '',
             domainHint: '',
@@ -1064,6 +957,7 @@
           setDocPages([]);
           setPdfBytes(null);
           setTextHighlights([]);
+          setInlineNotes({});
           setPdfAnnotations([]);
           setChatMessages(DEFAULT_WELCOME_MESSAGES());
           pdfJsDocRef.current = null;
@@ -1083,6 +977,7 @@
         setActiveLineIdx(docRecord.activeLineIdx || 0);
         setCurrentPdfPage(1);
         setTextHighlights(docRecord.textHighlights || []);
+        setInlineNotes(docRecord.inlineNotes || {});
         setPdfAnnotations(docRecord.pdfAnnotations || []);
         setChatMessages(
           docRecord.chatMessages?.length > 0 ? docRecord.chatMessages : DEFAULT_WELCOME_MESSAGES()
@@ -1112,21 +1007,7 @@
         }
       }, [currentOwnerUid]);
 
-      useEffect(() => {
-        (async () => {
-          const [savedProfile, savedGClientId] = await Promise.all([
-            idbGetKV('activeAccountProfile', null),
-            idbGetKV('googleClientId', '')
-          ]);
-          if (savedProfile) setAccountProfile(savedProfile);
-          if (savedGClientId) {
-            setGoogleClientId(savedGClientId);
-            setGoogleClientIdDraft(savedGClientId);
-          }
-        })();
-      }, []);
-
-      // 依帳號 UID 載入完全隔離的個人書庫、閱讀設定與金鑰
+      // 載入當前帳號的書庫、金鑰與設定
       useEffect(() => {
         let mounted = true;
         async function loadWorkspace() {
@@ -1134,6 +1015,7 @@
           const scopeUid = currentOwnerUid;
 
           const [
+            savedProfile,
             savedSettings,
             savedProvider,
             savedGemKey,
@@ -1143,6 +1025,7 @@
             savedActiveId,
             storedDocs
           ] = await Promise.all([
+            idbGetKV('activeAccountProfile', null),
             idbGetScopedKV(scopeUid, 'settings', null),
             idbGetScopedKV(scopeUid, 'aiProvider', 'gemini'),
             idbGetScopedKV(scopeUid, 'geminiApiKey', ''),
@@ -1154,7 +1037,7 @@
           ]);
 
           if (!mounted) return;
-
+          if (savedProfile) setAccountProfile(savedProfile);
           setSettings(savedSettings ? { ...DEFAULT_SETTINGS, ...savedSettings } : DEFAULT_SETTINGS);
           setAiProvider(savedProvider || 'gemini');
           setGeminiApiKey(savedGemKey || '');
@@ -1186,6 +1069,7 @@
         idbSetScopedKV(currentOwnerUid, 'settings', settings);
       }, [settings, dbInitialized, currentOwnerUid]);
 
+      // 自動持久儲存文獻進度、標註與行內筆記
       useEffect(() => {
         if (!dbInitialized || !activeDocId) return;
         const timer = setTimeout(() => {
@@ -1201,6 +1085,7 @@
               activeLineIdx,
               progressPct,
               textHighlights,
+              inlineNotes,
               pdfAnnotations,
               chatMessages
             };
@@ -1209,38 +1094,9 @@
           });
         }, 350);
         return () => clearTimeout(timer);
-      }, [dbInitialized, activeDocId, currentOwnerUid, activeLineIdx, readingLines.length, textHighlights, pdfAnnotations, chatMessages]);
+      }, [dbInitialized, activeDocId, currentOwnerUid, activeLineIdx, readingLines.length, textHighlights, inlineNotes, pdfAnnotations, chatMessages]);
 
-      useEffect(() => {
-        if (!showAccountModal || !googleClientId || !window.google?.accounts?.id || !googleBtnContainerRef.current) return;
-        try {
-          window.google.accounts.id.initialize({
-            client_id: googleClientId,
-            callback: async (response) => {
-              const payload = decodeJwtPayload(response.credential);
-              if (payload?.email) {
-                const profile = {
-                  uid: `google-${payload.sub || payload.email}`,
-                  email: payload.email,
-                  name: payload.name || payload.email.split('@')[0]
-                };
-                setAccountProfile(profile);
-                await idbSetKV('activeAccountProfile', profile);
-                showToast(`已透過 Google 登入「${profile.name}」的獨立書庫`);
-              }
-            }
-          });
-          window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
-            theme: 'outline',
-            size: 'medium',
-            text: 'signin_with'
-          });
-        } catch {
-          // 忽略無效 Client ID
-        }
-      }, [showAccountModal, googleClientId, showToast]);
-
-      // 鍵盤上下切換與空白鍵自動播放
+      // 鍵盤上下行與播放
       useEffect(() => {
         const onKeyDown = (e) => {
           const tag = document.activeElement?.tagName?.toLowerCase();
@@ -1270,7 +1126,7 @@
         return () => window.removeEventListener('keydown', onKeyDown);
       }, [readingLines.length, isLocked]);
 
-      // 自動換行播放計時器
+      // 自動換行閱讀進度計時器
       useEffect(() => {
         if (!isAutoPlaying || readingLines.length === 0) {
           setAutoPlayProgress(0);
@@ -1294,7 +1150,7 @@
               setActiveLineIdx((i) => i + 1);
             } else {
               setIsAutoPlaying(false);
-              showToast('已完成全文專注閱讀');
+              showToast('已完成全文閱讀');
             }
           } else {
             rafId = requestAnimationFrame(tick);
@@ -1305,7 +1161,7 @@
       }, [isAutoPlaying, activeLineIdx, readingLines, settings.wpm, showToast]);
 
       // =======================================================================
-      // PDF 畫布渲染與霧面標註塗層重繪
+      // PDF 畫布標註渲染 (支援直線模式)
       // =======================================================================
       const redrawAnnotationOverlay = useCallback(() => {
         const canvas = overlayCanvasRef.current;
@@ -1325,7 +1181,7 @@
           ctx.lineJoin = 'round';
           ctx.strokeStyle = cObj.hex;
           if (s.type === 'marker') {
-            ctx.globalAlpha = 0.34;
+            ctx.globalAlpha = 0.35;
             ctx.lineWidth = Math.max(14, canvas.width * 0.024);
           } else {
             ctx.globalAlpha = 0.92;
@@ -1379,9 +1235,7 @@
             renderTask = page.render({ canvasContext: ctx, viewport });
             await renderTask.promise;
             if (!cancelled) redrawAnnotationOverlay();
-          } catch {
-            // 忽略快速翻頁取消渲染例外
-          }
+          } catch {}
         })();
 
         return () => {
@@ -1438,17 +1292,17 @@
         }
 
         if (pdfTool === 'pen' || pdfTool === 'marker') {
-  const isStraight = drawMode === 'line' || e.shiftKey;
-  drawingStrokeRef.current = {
-    id: `stroke-${Date.now()}`,
-    page: currentPdfPage,
-    type: pdfTool,
-    colorId: activeBrushColor,
-    isStraight: isStraight,
-    points: [pt, pt] // 起點與終點
-  };
-  redrawAnnotationOverlay();
-}
+          const isStraight = drawMode === 'line' || e.shiftKey;
+          drawingStrokeRef.current = {
+            id: `stroke-${Date.now()}`,
+            page: currentPdfPage,
+            type: pdfTool,
+            colorId: activeBrushColor,
+            isStraight,
+            points: [pt, pt]
+          };
+          redrawAnnotationOverlay();
+        }
       };
 
       const handleOverlayPointerMove = (e) => {
@@ -1468,25 +1322,23 @@
           return;
         }
         if (!drawingStrokeRef.current) return;
-const stroke = drawingStrokeRef.current;
-const isStraight = stroke.isStraight || e.shiftKey;
+        const stroke = drawingStrokeRef.current;
+        const isStraight = stroke.isStraight || e.shiftKey;
 
-if (isStraight) {
-  // 直線模式：保留起點，更新終點（若按住 Shift 鍵可鎖定完全水平或垂直）
-  const startPt = stroke.points[0];
-  let endPt = { ...pt };
-  if (e.shiftKey) {
-    const dx = Math.abs(endPt.x - startPt.x);
-    const dy = Math.abs(endPt.y - startPt.y);
-    if (dx > dy) endPt.y = startPt.y; // 鎖定水平線
-    else endPt.x = startPt.x;        // 鎖定垂直線
-  }
-  stroke.points = [startPt, endPt];
-} else {
-  // 自由線條模式
-  stroke.points.push(pt);
-}
-redrawAnnotationOverlay();
+        if (isStraight) {
+          const startPt = stroke.points[0];
+          let endPt = { ...pt };
+          if (e.shiftKey) {
+            const dx = Math.abs(endPt.x - startPt.x);
+            const dy = Math.abs(endPt.y - startPt.y);
+            if (dx > dy) endPt.y = startPt.y;
+            else endPt.x = startPt.x;
+          }
+          stroke.points = [startPt, endPt];
+        } else {
+          stroke.points.push(pt);
+        }
+        redrawAnnotationOverlay();
       };
 
       const handleOverlayPointerUp = () => {
@@ -1501,7 +1353,7 @@ redrawAnnotationOverlay();
       };
 
       // =======================================================================
-      // 匯入多頁 PDF、刪除與書庫保留管理
+      // 匯入 PDF、刪除與本機備份/還原 (Local-First)
       // =======================================================================
       const handleImportPdfFiles = async (fileList) => {
         if (!fileList || fileList.length === 0) return;
@@ -1515,7 +1367,7 @@ redrawAnnotationOverlay();
           }
 
           try {
-            setImportProgressText(`正在載入 ${file.name}...`);
+            setImportProgressText(`正在讀取 ${file.name}...`);
             const arrayBuf = await file.arrayBuffer();
             const rawBytes = new Uint8Array(arrayBuf);
             const pdfDoc = await window.pdfjsLib.getDocument({
@@ -1528,7 +1380,7 @@ redrawAnnotationOverlay();
             const { pages, totalCharCount } = await extractStructuredPagesFromPdf(
               pdfDoc,
               settings.filterHeaderFooter,
-              (curr, total) => setImportProgressText(`精準解析多頁文字中 (${curr} / ${total} 頁)...`)
+              (curr, total) => setImportProgressText(`精準擷取文字中 (${curr} / ${total} 頁)...`)
             );
 
             const cleanTitle = file.name.replace(/\.pdf$/i, '');
@@ -1541,13 +1393,14 @@ redrawAnnotationOverlay();
               fileSize: file.size,
               title: firstHeading.length <= 85 ? firstHeading : cleanTitle,
               subtitle: `${file.name} • 共 ${pdfDoc.numPages} 頁`,
-              domainHint: `使用者匯入文獻 (${cleanTitle})`,
+              domainHint: `文獻 (${cleanTitle})`,
               numPages: pdfDoc.numPages,
               pages,
               pdfBytes: rawBytes,
               activeLineIdx: 0,
               progressPct: 1,
               textHighlights: [],
+              inlineNotes: {},
               pdfAnnotations: [],
               chatMessages: DEFAULT_WELCOME_MESSAGES(),
               updatedAt: Date.now()
@@ -1557,7 +1410,7 @@ redrawAnnotationOverlay();
             setLibraryDocs((prev) => [record, ...prev]);
             newestRecord = { record, pdfDoc, totalCharCount };
           } catch (err) {
-            showToast(`匯入 ${file.name} 失敗：${err.message}`);
+            showToast(`匯入失敗：${err.message}`);
           }
         }
 
@@ -1571,9 +1424,9 @@ redrawAnnotationOverlay();
 
           if (totalCharCount < record.numPages * 15) {
             setViewMode('split');
-            showToast('偵測到圖片掃描型 PDF，可點上方「AI 圖片轉文字」擷取內文');
+            showToast('偵測為掃描圖片型 PDF，可點上方「AI 圖片轉文字」擷取內文');
           } else {
-            showToast(`已成功匯入「${record.filename}」(${record.numPages} 頁) 並保留於書庫`);
+            showToast(`已成功匯入「${record.filename}」並永久保存於本機`);
           }
         }
       };
@@ -1581,190 +1434,84 @@ redrawAnnotationOverlay();
       const handleDeleteDocument = async (docId) => {
         const target = libraryDocs.find((d) => d.id === docId);
         if (!target) return;
-
         await idbDeleteDoc(docId);
         const remaining = libraryDocs.filter((d) => d.id !== docId);
         setLibraryDocs(remaining);
         setConfirmDeleteId(null);
-
         if (activeDocId === docId) {
           await activateDocumentRecord(remaining[0] || null, currentOwnerUid);
         }
-        showToast(`已從書庫刪除「${target.filename || target.title}」`);
+        showToast(`已刪除「${target.filename || target.title}」`);
       };
 
-      // 圖片型 PDF 單頁 AI 視覺辨識 (走個人 Gemini / OpenAI Key)
-      const handleOcrCurrentPdfPage = async () => {
-        if (!pdfCanvasRef.current || isOcrLoading) return;
-        if (!hasActiveApiKey) {
-          setShowAccountModal(true);
-          showToast('請先設定您的 Gemini 或 OpenAI API Key 以啟用圖片辨識');
-          return;
-        }
-        setIsOcrLoading(true);
+      // 匯出完整本機備份檔 (Local-First JSON)
+      const handleExportLocalBackup = async () => {
         try {
-          const base64Png = pdfCanvasRef.current.toDataURL('image/png').split(',')[1];
-          const geminiSchema = {
-            type: 'OBJECT',
-            properties: {
-              detectedDomain: { type: 'STRING' },
-              blocks: {
-                type: 'ARRAY',
-                items: {
-                  type: 'OBJECT',
-                  properties: { type: { type: 'STRING' }, text: { type: 'STRING' } },
-                  required: ['type', 'text']
-                }
-              }
-            },
-            required: ['blocks']
+          const allDocs = await idbGetAllDocs(currentOwnerUid);
+          const backupData = {
+            version: 'v3_ultimate',
+            ownerUid: currentOwnerUid,
+            exportDate: new Date().toISOString(),
+            settings,
+            inlineNotes,
+            documents: allDocs.map((doc) => ({
+              ...doc,
+              // 二進位轉 Array 儲存
+              pdfBytes: doc.pdfBytes ? Array.from(doc.pdfBytes) : null
+            }))
           };
-
-          const { text } = await callUnifiedAI({
-            provider: aiProvider,
-            geminiKey: geminiApiKey,
-            openaiKey: openaiApiKey,
-            model: aiProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-3.8-flash',
-            systemInstruction:
-              '你是精準學術 OCR 引擎。請依閱讀順序擷取圖片中的所有標題與正文段落，回傳 JSON 格式：{"detectedDomain":"領域名稱","blocks":[{"type":"heading"|"paragraph","text":"內容"}]}。',
-            messages: [{ role: 'user', text: '請擷取本頁所有正文區塊並輸出 JSON。', imageBase64: base64Png }],
-            thinkingLevelObj: THINKING_LEVELS[0],
-            expectJson: true,
-            geminiJsonSchema: geminiSchema
-          });
-
-          const parsed = JSON.parse(text);
-          if (Array.isArray(parsed.blocks) && parsed.blocks.length > 0) {
-            setDocPages((prev) => {
-              const exists = prev.some((p) => p.pageNumber === currentPdfPage);
-              const nextPages = exists
-                ? prev.map((p) => (p.pageNumber === currentPdfPage ? { ...p, blocks: parsed.blocks } : p))
-                : [...prev, { pageNumber: currentPdfPage, blocks: parsed.blocks }].sort((a, b) => a.pageNumber - b.pageNumber);
-
-              setLibraryDocs((docs) =>
-                docs.map((d) => {
-                  if (d.id !== activeDocId) return d;
-                  const updatedDoc = { ...d, domainHint: parsed.detectedDomain || d.domainHint, pages: nextPages };
-                  idbPutDoc(updatedDoc, currentOwnerUid);
-                  return updatedDoc;
-                })
-              );
-              return nextPages;
-            });
-            showToast(`第 ${currentPdfPage} 頁圖片文字辨識完成，已同步至專注閱讀器`);
-          }
-        } catch (err) {
-          showToast(`OCR 失敗：${err.message}`);
-        } finally {
-          setIsOcrLoading(false);
-        }
-      };
-
-      // 一鍵保存含標註與重點筆記總整理的 PDF
-      const handleExportAnnotatedPdf = async () => {
-        if (!window.PDFLib || isExportingPdf) return;
-        if (!pdfBytes) {
-          showToast('請先匯入 PDF 檔案後再匯出保存');
-          return;
-        }
-        setIsExportingPdf(true);
-        try {
-          const { PDFDocument, rgb } = window.PDFLib;
-          const pdfDoc = await PDFDocument.load(pdfBytes);
-          const pages = pdfDoc.getPages();
-
-          for (const ann of pdfAnnotations) {
-            const page = pages[(ann.page || 1) - 1];
-            if (!page) continue;
-            const { width, height } = page.getSize();
-            const cObj = MARKER_COLORS.find((c) => c.id === ann.colorId) || MARKER_COLORS[0];
-            const [r, g, b] = cObj.rgb;
-
-            if ((ann.type === 'pen' || ann.type === 'marker') && ann.points?.length >= 2) {
-              for (let i = 1; i < ann.points.length; i++) {
-                const p1 = ann.points[i - 1];
-                const p2 = ann.points[i];
-                page.drawLine({
-                  start: { x: p1.x * width, y: (1 - p1.y) * height },
-                  end: { x: p2.x * width, y: (1 - p2.y) * height },
-                  thickness: ann.type === 'marker' ? 14 : 2.4,
-                  color: rgb(r, g, b),
-                  opacity: ann.type === 'marker' ? 0.32 : 0.9
-                });
-              }
-            } else if (ann.type === 'note' && ann.text) {
-              const noteCanvas = document.createElement('canvas');
-              noteCanvas.width = 360;
-              noteCanvas.height = 160;
-              const nCtx = noteCanvas.getContext('2d');
-              nCtx.fillStyle = cObj.hex;
-              nCtx.fillRect(0, 0, 360, 160);
-              nCtx.strokeStyle = 'rgba(0,0,0,0.22)';
-              nCtx.lineWidth = 4;
-              nCtx.strokeRect(2, 2, 356, 156);
-              nCtx.fillStyle = '#22252a';
-              nCtx.font = 'bold 20px "Noto Sans TC", system-ui, sans-serif';
-              let line = '';
-              let ny = 38;
-              for (const ch of Array.from(ann.text.slice(0, 65))) {
-                if (nCtx.measureText(line + ch).width > 320) {
-                  nCtx.fillText(line, 18, ny);
-                  line = ch;
-                  ny += 28;
-                } else {
-                  line += ch;
-                }
-              }
-              if (line) nCtx.fillText(line, 18, ny);
-
-              const pngImg = await pdfDoc.embedPng(noteCanvas.toDataURL('image/png'));
-              const drawW = 135;
-              const drawH = 60;
-              page.drawImage(pngImg, {
-                x: Math.min(width - drawW - 10, ann.x * width),
-                y: Math.max(10, (1 - ann.y) * height - drawH),
-                width: drawW,
-                height: drawH
-              });
-            }
-          }
-
-          if (textHighlights.length > 0) {
-            const summaryUrls = renderNotesPagesToPngDataUrls(docMeta.title, textHighlights);
-            for (const dataUrl of summaryUrls) {
-              const png = await pdfDoc.embedPng(dataUrl);
-              const summaryPage = pdfDoc.addPage([595.28, 841.89]);
-              summaryPage.drawImage(png, { x: 0, y: 0, width: 595.28, height: 841.89 });
-            }
-          }
-
-          const exportedBytes = await pdfDoc.save();
-          const blob = new Blob([exportedBytes], { type: 'application/pdf' });
+          const jsonStr = JSON.stringify(backupData);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
-          const baseName = (docMeta.filename || docMeta.title || 'document').replace(/\.pdf$/i, '');
           a.href = url;
-          a.download = `${baseName}_筆記標註版.pdf`;
-          document.body.appendChild(a);
+          a.download = `ADHD_閱讀器完整備份_${new Date().toISOString().slice(0, 10)}.json`;
           a.click();
-          a.remove();
           URL.revokeObjectURL(url);
-          showToast('已匯出含所有標註與重點筆記的 PDF，可於任意閱讀器開啟');
+          showToast('已匯出完整本機備份檔，可在任何裝置隨時還原！');
         } catch (err) {
-          showToast(`匯出失敗：${err.message}`);
-        } finally {
-          setIsExportingPdf(false);
+          showToast(`備份失敗：${err.message}`);
         }
+      };
+
+      // 還原備份檔
+      const handleRestoreBackupFile = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const parsed = JSON.parse(text);
+          if (!parsed.documents) throw new Error('非標準備份格式');
+
+          for (const doc of parsed.documents) {
+            const restoredDoc = {
+              ...doc,
+              ownerUid: currentOwnerUid,
+              pdfBytes: doc.pdfBytes ? new Uint8Array(doc.pdfBytes) : null
+            };
+            await idbPutDoc(restoredDoc, currentOwnerUid);
+          }
+          if (parsed.settings) setSettings(parsed.settings);
+          showToast('備份還原成功！正在重新整理書庫...');
+          setTimeout(() => window.location.reload(), 1000);
+        } catch (err) {
+          showToast(`還原失敗：${err.message}`);
+        }
+      };
+
+      // 匯出「專注純文字版 PDF（含標註與行內筆記）」
+      const handlePrintCleanTextPdf = () => {
+        if (!activeDocId) return;
+        window.print();
       };
 
       // =======================================================================
-      // 1) 反白即翻：走免金鑰高速字典通道 (0 額度消耗、毫秒級秒回 + 本地快取)
+      // 反白即翻（免金鑰極速字典）
       // =======================================================================
       const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
         const cleanKey = selectedText.trim().slice(0, 350);
         if (!cleanKey) return;
 
-        // 命中本機快取時 0 延遲直接顯示
         const cached = quickTransCacheRef.current[cleanKey];
         if (cached) {
           setSelectionPopover((prev) =>
@@ -1795,7 +1542,7 @@ redrawAnnotationOverlay();
         } catch (err) {
           if (reqId !== quickReqIdRef.current) return;
           setSelectionPopover((prev) =>
-            prev ? { ...prev, quickLoading: false, quickError: err.message || '直譯連線逾時' } : null
+            prev ? { ...prev, quickLoading: false, quickError: err.message || '直譯逾時' } : null
           );
         }
       }, [currentOwnerUid]);
@@ -1817,6 +1564,7 @@ redrawAnnotationOverlay();
         setSelectionPopover({
           quote: cleaned,
           lineId: lineObj?.id || '',
+          lineIndex: typeof lineIndex === 'number' ? lineIndex : activeLineIdx,
           pageNumber: lineObj?.pageNumber || currentPdfPage || 1,
           paragraphContext: lineObj?.paragraphContext || cleaned,
           x: safeX,
@@ -1834,9 +1582,9 @@ redrawAnnotationOverlay();
           if (transDebounceRef.current) clearTimeout(transDebounceRef.current);
           transDebounceRef.current = setTimeout(() => {
             triggerQuickInstantTranslate(cleaned);
-          }, 300);
+          }, 280);
         }
-      }, [currentPdfPage, settings.instantTranslate, triggerQuickInstantTranslate]);
+      }, [activeLineIdx, currentPdfPage, settings.instantTranslate, triggerQuickInstantTranslate]);
 
       const handleLineMouseUp = (e, lineObj, idx) => {
         if (longPressTimerRef.current) {
@@ -1891,13 +1639,13 @@ redrawAnnotationOverlay();
       };
 
       // =======================================================================
-      // 2) 語境深譯：走您的個人 Gemini Key / OpenAI Key (嚴謹結合前後文脈絡)
+      // 語境深譯（Gemini / OpenAI API Key）
       // =======================================================================
       const handleRunContextualTranslate = async () => {
         if (!selectionPopover || selectionPopover.deepLoading) return;
         if (!hasActiveApiKey) {
           setShowAccountModal(true);
-          showToast('請先設定您的個人 Gemini 或 OpenAI API Key');
+          showToast('請先填寫您的 Gemini 或 OpenAI API Key');
           return;
         }
 
@@ -1923,16 +1671,16 @@ redrawAnnotationOverlay();
           };
 
           const prompt = `【文獻標題】：${docMeta.title}
-【文獻領域提示】：${docMeta.domainHint}
-【所在段落完整前後文】：${selectionPopover.paragraphContext}
-【選取的目標詞語或句子】：${selectionPopover.quote}
+【文獻領域】：${docMeta.domainHint}
+【上下文完整段落】：${selectionPopover.paragraphContext}
+【目標詞句】：${selectionPopover.quote}
 
-請根據這篇文章的專業學科脈絡（例如若為哲學文章請採用嚴謹哲學術語譯法，若為醫學/科學請採用精確學術譯法，絕不作單一死板直譯），連接上下文解釋其深層意涵。請回傳 JSON 格式：
+請根據學術領域脈絡，提供嚴謹貼切的繁體中文語境翻譯與深層論證角色解析。回傳 JSON：
 {
-  "detectedGenre": "偵測到的學科體裁",
-  "rigorousTranslation": "貼合語境的嚴謹繁體中文翻譯",
-  "contextualNuance": "連接前後文的論證角色與語境釋義",
-  "keyTerms": [{"term": "關鍵專有名詞", "meaningInContext": "在此處的精確定義"}]
+  "detectedGenre": "學科領域",
+  "rigorousTranslation": "嚴謹繁中翻譯",
+  "contextualNuance": "前後文脈絡意涵",
+  "keyTerms": [{"term": "關鍵術語", "meaningInContext": "定義"}]
 }`;
 
           const { text } = await callUnifiedAI({
@@ -1940,8 +1688,7 @@ redrawAnnotationOverlay();
             geminiKey: geminiApiKey,
             openaiKey: openaiApiKey,
             model: selectedModel,
-            systemInstruction:
-              '你是一位精通哲學、人文與自然科學學術文本的嚴謹譯者與導讀學者。請緊扣文章體裁與前後文脈絡進行精準繁體中文翻譯與釋義。',
+            systemInstruction: '嚴謹學術導讀譯者。緊扣文章脈絡以繁體中文回答。',
             messages: [{ role: 'user', text: prompt }],
             thinkingLevelObj: THINKING_LEVELS[1],
             expectJson: true,
@@ -1959,10 +1706,11 @@ redrawAnnotationOverlay();
         }
       };
 
-      const handleAddHighlight = (colorId = 'ochre') => {
+      // 新增重點標註（支援標籤 tags）
+      const handleAddHighlight = (colorId = 'ochre', customTag = '重要概念') => {
         if (!selectionPopover) return;
         const autoNote = selectionPopover.deepResult
-          ? `【語境深譯】${selectionPopover.deepResult.rigorousTranslation} — ${selectionPopover.deepResult.contextualNuance}`
+          ? `【深譯】${selectionPopover.deepResult.rigorousTranslation} — ${selectionPopover.deepResult.contextualNuance}`
           : selectionPopover.quickResult
           ? `【快譯】${selectionPopover.quickResult.translation}`
           : '';
@@ -1970,9 +1718,11 @@ redrawAnnotationOverlay();
         const newHl = {
           id: `hl-${Date.now()}`,
           lineId: selectionPopover.lineId,
+          lineIndex: selectionPopover.lineIndex,
           pageNumber: selectionPopover.pageNumber,
           quote: selectionPopover.quote,
           colorId,
+          tag: customTag,
           note: autoNote,
           createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
@@ -1980,25 +1730,53 @@ redrawAnnotationOverlay();
         setTextHighlights((prev) => [newHl, ...prev]);
         setSelectionPopover(null);
         window.getSelection()?.removeAllRanges();
-        showToast('已加入霧面重點標註（保存 PDF 時將自動匯出）');
+        showToast('已加入重點標註，可於側邊欄即時編輯或點擊跳回該行');
       };
 
-      const handleAskAiFromSelection = () => {
-        if (!selectionPopover) return;
-        setQuotedContext({
-          quote: selectionPopover.quote,
-          paragraphContext: selectionPopover.paragraphContext,
-          pageNumber: selectionPopover.pageNumber
-        });
-        setSelectionPopover(null);
-        window.getSelection()?.removeAllRanges();
-        setSidebarTab('ai');
-        setShowRightSidebar(true);
+      // 側邊欄重點卡片平滑跳回段落（Scroll-to-Target + Pulse 動效）
+      const handleJumpToLine = (targetLineId, targetLineIdx) => {
+        let index = typeof targetLineIdx === 'number' ? targetLineIdx : -1;
+        if (index === -1 || !readingLines[index] || readingLines[index].id !== targetLineId) {
+          index = readingLines.findIndex((l) => l.id === targetLineId);
+        }
+        if (index === -1) {
+          showToast('找不到該段落位置');
+          return;
+        }
+
+        setIsAutoPlaying(false);
+        setActiveLineIdx(index);
+        setPulseLineId(targetLineId);
+
+        const el = lineRefs.current[index];
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        setTimeout(() => {
+          setPulseLineId((curr) => (curr === targetLineId ? null : curr));
+        }, 1800);
       };
 
-      // =======================================================================
-      // 3) AI 側欄多輪問答：走您的個人 Gemini Key / OpenAI Key
-      // =======================================================================
+      // 側邊欄對話「📌 釘選為重點筆記」
+      const handlePinChatAsNote = (chatMsg) => {
+        const curLine = readingLines[activeLineIdx];
+        const newHl = {
+          id: `hl-pin-${Date.now()}`,
+          lineId: curLine?.id || 'manual',
+          lineIndex: activeLineIdx,
+          pageNumber: curLine?.pageNumber || 1,
+          quote: chatMsg.quote || curLine?.text || 'AI 導讀觀點',
+          colorId: 'dustyBlue',
+          tag: 'AI 導讀總結',
+          note: chatMsg.content,
+          createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setTextHighlights((prev) => [newHl, ...prev]);
+        showToast('已將 AI 解釋釘選收錄至重點筆記清單！');
+      };
+
+      // 發送 AI 側欄聊天
       const handleSendChat = async (e) => {
         if (e) e.preventDefault();
         const question = chatInput.trim();
@@ -2006,11 +1784,11 @@ redrawAnnotationOverlay();
 
         if (!hasActiveApiKey) {
           setShowAccountModal(true);
-          showToast('請先點右上角設定您的個人 Gemini 或 OpenAI 金鑰');
+          showToast('請先填寫您的 Gemini 或 OpenAI 金鑰');
           return;
         }
 
-        const effectiveQuestion = question || '請結合這段文章的前後文脈絡，為我深入解析這個詞句的核心概念。';
+        const effectiveQuestion = question || '請結合上下文脈絡，深入解析這段文字的核心概念。';
         const currentQuote = quotedContext;
         const levelObj = THINKING_LEVELS.find((t) => t.id === thinkingLevel) || THINKING_LEVELS[2];
         const modelList = PROVIDER_MODELS[aiProvider] || PROVIDER_MODELS.gemini;
@@ -2039,8 +1817,8 @@ redrawAnnotationOverlay();
             }));
 
           const currentTurnPrompt = currentQuote
-            ? `【文獻標題】：${docMeta.title}（${docMeta.domainHint}）\n【選取處完整段落 (P.${currentQuote.pageNumber})】：${currentQuote.paragraphContext}\n【我選中的詞句】："${currentQuote.quote}"\n\n【我的問題】：${effectiveQuestion}`
-            : `【文獻標題】：${docMeta.title}\n【目前閱讀段落】：${readingLines[activeLineIdx]?.paragraphContext || ''}\n\n【我的問題】：${effectiveQuestion}`;
+            ? `【文獻標題】：${docMeta.title}（${docMeta.domainHint}）\n【選取處段落 (P.${currentQuote.pageNumber})】：${currentQuote.paragraphContext}\n【目標詞句】："${currentQuote.quote}"\n\n【問題】：${effectiveQuestion}`
+            : `【文獻標題】：${docMeta.title}\n【當前段落】：${readingLines[activeLineIdx]?.paragraphContext || ''}\n\n【問題】：${effectiveQuestion}`;
 
           historyMsgs.push({ role: 'user', text: currentTurnPrompt });
 
@@ -2049,8 +1827,7 @@ redrawAnnotationOverlay();
             geminiKey: geminiApiKey,
             openaiKey: openaiApiKey,
             model: modelObj.id,
-            systemInstruction:
-              '你是專為深度閱讀者與 ADHD 使用者設計的學術導讀助理。請緊扣文章前後文脈絡回答，結構清晰、重點明確，使用繁體中文。',
+            systemInstruction: '你是專為 ADHD 設計的學術導讀助理。回答結構清晰、條列重點，使用繁體中文。',
             messages: historyMsgs,
             thinkingLevelObj: levelObj,
             expectJson: false
@@ -2064,7 +1841,8 @@ redrawAnnotationOverlay();
               model: modelObj.label.split('(')[0].trim(),
               thinkingLabel: levelObj.label,
               thought,
-              content: text || '已完成推理，但未收到回應文字。'
+              quote: currentQuote?.quote || '',
+              content: text || '已完成推理。'
             }
           ]);
         } catch (err) {
@@ -2073,7 +1851,7 @@ redrawAnnotationOverlay();
             {
               id: `err-${Date.now()}`,
               role: 'assistant',
-              model: '連線提示',
+              model: '提示',
               thinkingLabel: '異常',
               content: `無法取得回應：${err.message}`
             }
@@ -2083,53 +1861,17 @@ redrawAnnotationOverlay();
         }
       };
 
-      // 儲存帳號空間與雙引擎金鑰
-      const handleSwitchAccountWorkspace = async (e) => {
-        e.preventDefault();
-        const cleanEmail = switchEmailDraft.trim().toLowerCase();
-        if (!cleanEmail) {
-          showToast('請輸入 Email 或帳號名稱以建立專屬空間');
-          return;
-        }
-        const profile = {
-          uid: `user-${cleanEmail.replace(/[^a-z0-9\u4e00-\u9fff]/g, '_')}`,
-          email: cleanEmail,
-          name: cleanEmail.split('@')[0]
-        };
-        setAccountProfile(profile);
-        await idbSetKV('activeAccountProfile', profile);
-        setSwitchEmailDraft('');
-        showToast(`已切換至「${profile.name}」的獨立書庫與筆記空間`);
-      };
+      // 篩選後重點筆記清單
+      const filteredHighlights = useMemo(() => {
+        if (selectedTagFilter === 'ALL') return textHighlights;
+        return textHighlights.filter((h) => h.tag === selectedTagFilter);
+      }, [textHighlights, selectedTagFilter]);
 
-      const handleLogoutWorkspace = async () => {
-        setAccountProfile(null);
-        await idbSetKV('activeAccountProfile', null);
-        showToast('已切回本機預設獨立空間');
-      };
-
-      const handleSaveAccountAndKeys = async () => {
-        const cleanGem = geminiKeyDraft.trim();
-        const cleanOai = openaiKeyDraft.trim();
-        const cleanPin = pinDraft.trim();
-        const cleanGClient = googleClientIdDraft.trim();
-
-        setGeminiApiKey(cleanGem);
-        setOpenaiApiKey(cleanOai);
-        setPinCode(cleanPin);
-        setGoogleClientId(cleanGClient);
-
-        await Promise.all([
-          idbSetScopedKV(currentOwnerUid, 'aiProvider', aiProvider),
-          idbSetScopedKV(currentOwnerUid, 'geminiApiKey', cleanGem),
-          idbSetScopedKV(currentOwnerUid, 'openaiApiKey', cleanOai),
-          idbSetScopedKV(currentOwnerUid, 'pinCode', cleanPin),
-          idbSetKV('googleClientId', cleanGClient)
-        ]);
-
-        setShowAccountModal(false);
-        showToast('已儲存個人空間的 AI 引擎與連線設定');
-      };
+      const allExistingTags = useMemo(() => {
+        const set = new Set(DEFAULT_NOTE_TAGS);
+        textHighlights.forEach((h) => { if (h.tag) set.add(h.tag); });
+        return Array.from(set);
+      }, [textHighlights]);
 
       const renderHighlightedLineText = (line) => {
         const lineHls = textHighlights.filter(
@@ -2181,60 +1923,6 @@ redrawAnnotationOverlay();
           ? 'font-reader-mono'
           : 'font-reader-sans';
 
-      // 若啟用本機密碼鎖則顯示解鎖畫面
-      if (isLocked && pinCode) {
-        return (
-          <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: 'var(--bg-app)' }}>
-            <div
-              className="w-full max-w-sm rounded-2xl border p-6 shadow-xl space-y-4"
-              style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
-                  <Icon name="lock" className="w-5 h-5" />
-                </div>
-                <div>
-                  <h1 className="text-base font-bold">個人閱讀空間已鎖定</h1>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{currentAccountDisplay.name}</p>
-                </div>
-              </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (unlockInput === pinCode) {
-                    setIsLocked(false);
-                    setUnlockInput('');
-                    setUnlockError('');
-                  } else {
-                    setUnlockError('密碼不正確，請重試');
-                  }
-                }}
-                className="space-y-3"
-              >
-                <input
-                  type="password"
-                  value={unlockInput}
-                  onChange={(e) => setUnlockInput(e.target.value)}
-                  placeholder="輸入通行密碼..."
-                  autoFocus
-                  style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                  className="w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none"
-                />
-                {unlockError && <p className="text-xs" style={{ color: 'var(--danger)' }}>{unlockError}</p>}
-                <button
-                  type="submit"
-                  style={{ backgroundColor: 'var(--accent)' }}
-                  className="w-full py-2.5 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 transition hover:opacity-90"
-                >
-                  <Icon name="unlock" className="w-4 h-4" />
-                  <span>解鎖進入閱讀器</span>
-                </button>
-              </form>
-            </div>
-          </div>
-        );
-      }
-
       return (
         <div
           className="h-screen w-full flex flex-col overflow-hidden transition-colors duration-300"
@@ -2245,7 +1933,7 @@ redrawAnnotationOverlay();
             if (e.dataTransfer?.files?.length) handleImportPdfFiles(e.dataTransfer.files);
           }}
         >
-          {/* 隱藏的多檔 PDF 選取器 */}
+          {/* 隱藏的 PDF / 備份還原 File Inputs */}
           <input
             ref={fileInputRef}
             type="file"
@@ -2254,14 +1942,21 @@ redrawAnnotationOverlay();
             className="hidden"
             onChange={(e) => handleImportPdfFiles(e.target.files)}
           />
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleRestoreBackupFile}
+          />
 
           {/* 頂部導覽列 */}
           <header
             style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
-            className="h-14 px-4 flex items-center justify-between gap-3 border-b shrink-0 z-30 relative backdrop-blur-md"
+            className="h-14 px-4 flex items-center justify-between gap-3 border-b shrink-0 z-30 relative backdrop-blur-md no-print"
           >
-            {/* 左區：書庫管理 + 匯入 PDF */}
-            <div className="flex items-center gap-3 min-w-0">
+            {/* 左區：書庫下拉 + 匯入 PDF */}
+            <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative min-w-0 shrink">
                 <button
                   onClick={() => {
@@ -2269,12 +1964,12 @@ redrawAnnotationOverlay();
                     setShowSettingsPanel(false);
                   }}
                   style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                  className="flex items-center gap-2 h-9 px-3 rounded-xl border shrink min-w-0 w-[150px] sm:w-[220px] transition hover:opacity-90"
-                  title="開啟個人書庫（切換、保留或刪除已匯入的 PDF）"
+                  className="flex items-center gap-2 h-9 px-3 rounded-xl border shrink min-w-0 w-[145px] sm:w-[210px] transition hover:opacity-90"
+                  title="開啟個人書庫"
                 >
                   <span className="opacity-70 shrink-0"><Icon name="folder" className="w-4 h-4" /></span>
                   <span className="truncate text-xs sm:text-sm font-medium flex-1 text-left">
-                    {activeDocId ? docMeta.title : `個人書庫 (${libraryDocs.length})`}
+                    {activeDocId ? docMeta.title : `書庫 (${libraryDocs.length})`}
                   </span>
                   <span className="opacity-55 shrink-0"><Icon name="down" className="w-3.5 h-3.5" /></span>
                 </button>
@@ -2286,9 +1981,9 @@ redrawAnnotationOverlay();
                   >
                     <div className="flex items-center justify-between gap-2 pb-3 mb-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
                       <div className="min-w-0">
-                        <h3 className="text-xs font-bold truncate">已保留書庫 ({libraryDocs.length})</h3>
+                        <h3 className="text-xs font-bold truncate">已保存書庫 ({libraryDocs.length})</h3>
                         <p className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          空間：{currentAccountDisplay.name}
+                          空間：{accountProfile?.name || '本機私人空間'}
                         </p>
                       </div>
                       <button
@@ -2297,14 +1992,14 @@ redrawAnnotationOverlay();
                         className="h-8 px-3 rounded-lg text-white text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0"
                       >
                         <Icon name="plus" className="w-3.5 h-3.5" />
-                        <span>匯入 PDF</span>
+                        <span>匯入檔案</span>
                       </button>
                     </div>
 
                     <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
                       {libraryDocs.length === 0 ? (
                         <div className="py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                          書庫尚無檔案，請點擊上方「匯入 PDF」導入您的多頁文獻
+                          書庫尚無檔案，請點擊上方「匯入檔案」
                         </div>
                       ) : (
                         libraryDocs.map((item) => {
@@ -2330,9 +2025,7 @@ redrawAnnotationOverlay();
                                 }}
                                 className="flex-1 min-w-0 text-left"
                               >
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-semibold truncate">{item.title}</span>
-                                </div>
+                                <div className="text-xs font-semibold truncate">{item.title}</div>
                                 <div className="flex items-center gap-2 text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
                                   <span>{item.numPages || item.pages?.length || 1} 頁</span>
                                   <span>•</span>
@@ -2347,13 +2040,13 @@ redrawAnnotationOverlay();
                                   <button
                                     onClick={() => handleDeleteDocument(item.id)}
                                     style={{ backgroundColor: 'var(--danger)' }}
-                                    className="px-2.5 py-1 rounded-lg text-white text-[11px] font-medium whitespace-nowrap"
+                                    className="px-2.5 py-1 rounded-lg text-white text-[11px] font-medium"
                                   >
-                                    確認刪除
+                                    刪除
                                   </button>
                                   <button
                                     onClick={() => setConfirmDeleteId(null)}
-                                    className="p-1 rounded-lg opacity-70 hover:opacity-100"
+                                    className="p-1 rounded-lg opacity-70"
                                   >
                                     <Icon name="x" className="w-3.5 h-3.5" />
                                   </button>
@@ -2365,7 +2058,7 @@ redrawAnnotationOverlay();
                                     setConfirmDeleteId(item.id);
                                   }}
                                   className="p-1.5 rounded-lg opacity-55 hover:opacity-100 transition shrink-0"
-                                  title="刪除此 PDF 檔案"
+                                  title="刪除"
                                 >
                                   <Icon name="trash" className="w-3.5 h-3.5" />
                                 </button>
@@ -2376,9 +2069,20 @@ redrawAnnotationOverlay();
                       )}
                     </div>
 
-                    <div className="pt-3 mt-2.5 border-t flex items-center justify-end text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                    <div className="pt-3 mt-2.5 border-t flex items-center justify-between text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                      <div className="flex items-center gap-2">
+                        <button onClick={handleExportLocalBackup} className="hover:opacity-100 flex items-center gap-1" title="匯出完整備份檔">
+                          <Icon name="backup" className="w-3.5 h-3.5" />
+                          <span>備份</span>
+                        </button>
+                        <span>•</span>
+                        <button onClick={() => backupInputRef.current?.click()} className="hover:opacity-100 flex items-center gap-1" title="還原備份檔">
+                          <Icon name="restore" className="w-3.5 h-3.5" />
+                          <span>還原</span>
+                        </button>
+                      </div>
                       <button onClick={() => setShowLibraryMenu(false)} className="hover:opacity-100">
-                        收合選單
+                        收合
                       </button>
                     </div>
                   </div>
@@ -2395,7 +2099,7 @@ redrawAnnotationOverlay();
               </button>
             </div>
 
-            {/* 中區：檢視模式切換 */}
+            {/* 中區：模式切換膠囊 */}
             <nav
               aria-label="檢視模式"
               style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
@@ -2423,14 +2127,14 @@ redrawAnnotationOverlay();
               })}
             </nav>
 
-            {/* 右區：功能控制組 */}
-            <div className="flex items-center gap-2.5 shrink-0">
-              {/* 反白即翻切換鈕 */}
+            {/* 右區：控制按鈕組 */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* 反白即翻開關 */}
               <button
                 onClick={() =>
                   setSettings((s) => {
                     const next = !s.instantTranslate;
-                    showToast(next ? '已開啟「反白即翻」免金鑰極速字典' : '已關閉「反白即翻」');
+                    showToast(next ? '已開啟「反白即翻」免金鑰字典' : '已關閉「反白即翻」');
                     return { ...s, instantTranslate: next };
                   })
                 }
@@ -2440,14 +2144,26 @@ redrawAnnotationOverlay();
                     : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }
                 }
                 className="h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
-                title="切換反白即翻譯（免金鑰高速字典，不消耗 Gemini 額度）"
+                title="切換反白即翻（免金鑰高速字典）"
               >
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: settings.instantTranslate ? 'var(--warn)' : 'var(--border-color)' }} />
                 <span className="hidden xl:inline">反白即翻</span>
                 <span className="xl:hidden"><Icon name="zap" className="w-3.5 h-3.5" /></span>
               </button>
 
-              {/* 閱讀參數設定 */}
+              {/* 匯出純文字 PDF (含筆記) */}
+              <button
+                onClick={handlePrintCleanTextPdf}
+                disabled={!activeDocId}
+                style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                className="h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition hover:opacity-90 disabled:opacity-40"
+                title="匯出專注純文字版 PDF（含螢光筆劃記與行內筆記，排版乾淨）"
+              >
+                <span className="opacity-70"><Icon name="printer" className="w-3.5 h-3.5" /></span>
+                <span className="hidden xl:inline">純文字 PDF</span>
+              </button>
+
+              {/* 閱讀設定面板 */}
               <div className="relative shrink-0">
                 <button
                   onClick={() => {
@@ -2475,7 +2191,7 @@ redrawAnnotationOverlay();
 
                     <div>
                       <label className="text-[11px] font-semibold block mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                        低飽和護眼主題（無純黑與刺眼螢光）
+                        護眼低飽和主題
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         {Object.entries(THEMES).map(([tKey, tVal]) => {
@@ -2545,108 +2261,23 @@ redrawAnnotationOverlay();
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="flex justify-between text-[11px] mb-1">
-                          <span style={{ color: 'var(--text-muted)' }}>字元間距</span>
-                          <span className="font-mono">{settings.letterSpacing}em</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="0.12"
-                          step="0.01"
-                          value={settings.letterSpacing}
-                          onChange={(e) => setSettings((s) => ({ ...s, letterSpacing: Number(e.target.value) }))}
-                          className="w-full"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-[11px] mb-1">
-                          <span style={{ color: 'var(--text-muted)' }}>專注欄寬</span>
-                          <span className="font-mono">{settings.maxWidth}px</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="520"
-                          max="980"
-                          step="20"
-                          value={settings.maxWidth}
-                          onChange={(e) => setSettings((s) => ({ ...s, maxWidth: Number(e.target.value) }))}
-                          className="w-full"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="text-[11px] block mb-1" style={{ color: 'var(--text-muted)' }}>拆解單位</label>
-                        <div className="grid grid-cols-2 p-0.5 rounded-xl border" style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}>
-                          {[
-                            { id: 'sentence', label: '逐句' },
-                            { id: 'paragraph', label: '逐段' }
-                          ].map((g) => (
-                            <button
-                              key={g.id}
-                              onClick={() => setSettings((s) => ({ ...s, granularity: g.id }))}
-                              style={settings.granularity === g.id ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}
-                              className="py-1 rounded-lg text-[11px] font-medium transition"
-                            >
-                              {g.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[11px] block mb-1" style={{ color: 'var(--text-muted)' }}>字體風格</label>
-                        <div className="grid grid-cols-3 p-0.5 rounded-xl border" style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}>
-                          {[
-                            { id: 'sans', label: '黑體' },
-                            { id: 'serif', label: '襯線' },
-                            { id: 'mono', label: '等寬' }
-                          ].map((f) => (
-                            <button
-                              key={f.id}
-                              onClick={() => setSettings((s) => ({ ...s, fontFamily: f.id }))}
-                              style={settings.fontFamily === f.id ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}
-                              className="py-1 rounded-lg text-[11px] font-medium transition"
-                            >
-                              {f.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
                     <div className="pt-2.5 border-t space-y-2" style={{ borderColor: 'var(--border-color)' }}>
                       <ToggleSwitch
                         checked={settings.instantTranslate}
                         onChange={(val) => setSettings((s) => ({ ...s, instantTranslate: val }))}
-                        label="反白即翻譯（免金鑰高速字典秒回）"
+                        label="反白即翻譯（免金鑰快速字典秒回）"
                       />
                       <ToggleSwitch
                         checked={settings.filterHeaderFooter}
                         onChange={(val) => setSettings((s) => ({ ...s, filterHeaderFooter: val }))}
-                        label="匯入多頁 PDF 時過濾頁首頁碼雜訊"
+                        label="匯入 PDF 時過濾頁首頁碼雜訊"
                       />
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* 一鍵保存 PDF */}
-              <button
-                onClick={handleExportAnnotatedPdf}
-                disabled={isExportingPdf || !activeDocId}
-                style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                className="h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition hover:opacity-90 disabled:opacity-40"
-                title="一鍵匯出含標註塗鴉與重點筆記附錄的 PDF 檔案"
-              >
-                <span className="opacity-70"><Icon name="download" className="w-3.5 h-3.5" /></span>
-                <span className="hidden xl:inline">{isExportingPdf ? '匯出中...' : '保存 PDF'}</span>
-              </button>
-
-              {/* AI 側欄按鈕 */}
+              {/* AI 側欄開關 */}
               <button
                 onClick={() => setShowRightSidebar((v) => !v)}
                 style={
@@ -2657,7 +2288,7 @@ redrawAnnotationOverlay();
                 className="h-9 px-3 rounded-xl border text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
               >
                 <Icon name="sparkles" className="w-3.5 h-3.5 opacity-85" />
-                <span className="hidden sm:inline">AI 側欄</span>
+                <span className="hidden sm:inline">筆記與 AI</span>
                 {textHighlights.length > 0 && !showRightSidebar && (
                   <span className="px-1.5 py-0.5 text-[10px] rounded-full" style={{ backgroundColor: 'var(--accent-soft)' }}>
                     {textHighlights.length}
@@ -2665,13 +2296,12 @@ redrawAnnotationOverlay();
                 )}
               </button>
 
-              {/* 帳號與 AI 連線設定 */}
+              {/* 帳號與 AI 設定 */}
               <button
                 onClick={() => {
                   setGeminiKeyDraft(geminiApiKey);
                   setOpenaiKeyDraft(openaiApiKey);
                   setPinDraft(pinCode);
-                  setGoogleClientIdDraft(googleClientId);
                   setShowAccountModal(true);
                 }}
                 style={{
@@ -2679,53 +2309,18 @@ redrawAnnotationOverlay();
                   borderColor: hasActiveApiKey ? 'var(--accent)' : 'var(--border-color)'
                 }}
                 className="h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
-                title="個人帳號空間切換、Google Gemini / ChatGPT 金鑰設定"
               >
                 <Icon name="user" className="w-3.5 h-3.5 opacity-75" />
                 <span className="hidden 2xl:inline max-w-[96px] truncate">
-                  {hasActiveApiKey
-                    ? `${aiProvider === 'openai' ? 'ChatGPT' : 'Gemini'} 已連線`
-                    : '帳號與 AI 連線'}
+                  {hasActiveApiKey ? `${aiProvider === 'openai' ? 'ChatGPT' : 'Gemini'} 連線` : '帳號與 AI'}
                 </span>
               </button>
             </div>
           </header>
 
-          {/* 手機與平板次級檢視切換列 */}
-          <div
-            style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
-            className="flex lg:hidden items-center justify-center gap-2 px-3 py-1.5 border-b shrink-0"
-          >
-            {[
-              { id: 'focus', label: '專注閱讀', icon: 'eye' },
-              { id: 'split', label: '雙欄對照', icon: 'columns' },
-              { id: 'pdf', label: 'PDF 標註', icon: 'file' }
-            ].map((tab) => {
-              const active = viewMode === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setViewMode(tab.id)}
-                  style={active ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}
-                  className="flex-1 h-7 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition"
-                >
-                  <Icon name={tab.icon} className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {importProgressText && (
-            <div style={{ backgroundColor: 'var(--accent)' }} className="text-white text-xs py-1.5 px-4 text-center shrink-0">
-              {importProgressText}
-            </div>
-          )}
-
-          {/* 主內容工作區 */}
+          {/* 主工作區 */}
           <div className="flex-1 flex min-h-0 overflow-hidden relative">
             {!activeDocId ? (
-              /* 書庫尚無檔案時的簡潔護眼匯入畫面 */
               <main className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -2741,8 +2336,8 @@ redrawAnnotationOverlay();
                   <div className="space-y-1.5">
                     <h1 className="text-lg font-bold">匯入您的 PDF 開始專注閱讀</h1>
                     <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                      點擊此處選擇檔案，或直接將多頁文字型／圖片型 PDF 拖曳至視窗中。<br />
-                      匯入的檔案與重點筆記將自動保存在您個人的瀏覽器書庫內，與他人完全隔離。
+                      點擊此處選擇檔案，或直接將多頁 PDF 拖曳至此處。<br />
+                      資料與筆記永久存於本機 IndexedDB，點擊右上角更可隨時一鍵匯出備份檔。
                     </p>
                   </div>
                   <div className="pt-2">
@@ -2758,7 +2353,7 @@ redrawAnnotationOverlay();
               </main>
             ) : (
               <>
-                {/* 左欄／主欄：ADHD 聚光燈閱讀區 */}
+                {/* 專注閱讀區 */}
                 {viewMode !== 'pdf' && (
                   <main
                     onClick={() => {
@@ -2779,8 +2374,6 @@ redrawAnnotationOverlay();
                           </span>
                           <span>•</span>
                           <span>{docMeta.subtitle}</span>
-                          <span>•</span>
-                          <span>點擊或 ↑↓ 切換聚光燈行，反白或長按詞句可翻譯、提問與畫重點</span>
                         </div>
                         <h1 className="text-xl sm:text-2xl font-bold tracking-tight leading-snug">
                           {docMeta.title}
@@ -2792,23 +2385,26 @@ redrawAnnotationOverlay();
                           style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
                           className="rounded-2xl border p-8 text-center space-y-3"
                         >
-                          <p className="text-sm font-semibold">本檔案尚未擷取到文字圖層（可能為掃描圖片型 PDF）</p>
+                          <p className="text-sm font-semibold">本檔案未擷取到文字圖層（可能為掃描圖片型 PDF）</p>
                           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            請切換至上方「雙欄對照」或「PDF 標註」，點擊工具列的「AI 圖片轉文字」即可將頁面辨識匯入專注閱讀區。
+                            請切換至「雙欄對照」並點擊工具列的「AI 圖片轉文字」。
                           </p>
                         </div>
                       ) : (
-                        <div className="space-y-2.5">
+                        <div className="space-y-3">
                           {readingLines.map((line, idx) => {
                             const isActive = idx === activeLineIdx;
+                            const isPulsing = pulseLineId === line.id;
                             const prevLine = idx > 0 ? readingLines[idx - 1] : null;
                             const showPageDivider = !prevLine || prevLine.pageNumber !== line.pageNumber;
                             const inactiveOpacity = Math.max(0.08, 1 - settings.dimIntensity / 100);
+                            const hasInlineNote = Boolean(inlineNotes[line.id]);
+                            const isEditingInline = editingInlineLineId === line.id;
 
                             return (
                               <React.Fragment key={line.id}>
                                 {showPageDivider && (
-                                  <div className="pt-5 pb-2 flex items-center gap-3 select-none">
+                                  <div className="pt-5 pb-2 flex items-center gap-3 select-none no-print">
                                     <span
                                       style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
                                       className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
@@ -2836,9 +2432,9 @@ redrawAnnotationOverlay();
                                     lineHeight: settings.lineHeight,
                                     letterSpacing: `${settings.letterSpacing}em`
                                   }}
-                                  className={`relative rounded-2xl px-4 sm:px-5 py-3 border transition-all duration-200 cursor-pointer ${
+                                  className={`group relative rounded-2xl px-4 sm:px-5 py-3 border transition-all duration-200 cursor-pointer ${
                                     isActive ? 'shadow-md' : 'hover:opacity-75'
-                                  } ${line.type === 'heading' ? 'font-bold mt-3' : ''}`}
+                                  } ${line.type === 'heading' ? 'font-bold mt-3' : ''} ${isPulsing ? 'pulse-target' : ''}`}
                                 >
                                   {isActive && (
                                     <span
@@ -2847,10 +2443,84 @@ redrawAnnotationOverlay();
                                     />
                                   )}
 
+                                  {/* 行內文字與高亮 */}
                                   <div>{renderHighlightedLineText(line)}</div>
 
+                                  {/* 行內筆記按鈕（懸停或當前行顯示） */}
+                                  <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition no-print">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingInlineLineId((cur) => (cur === line.id ? null : line.id));
+                                      }}
+                                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                                      className="px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 shadow-sm hover:opacity-100"
+                                      title="在此行下方新增／編輯即時筆記"
+                                    >
+                                      <Icon name="note" className="w-3 h-3 text-amber-500" />
+                                      <span>{hasInlineNote ? '看筆記' : '+ 筆記'}</span>
+                                    </button>
+                                  </div>
+
+                                  {/* 行內即時筆記展開卡片 (Inline Notes) */}
+                                  {(hasInlineNote || isEditingInline) && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--accent)' }}
+                                      className="mt-3 p-3 rounded-xl border border-l-4 text-xs space-y-2 inline-note-print"
+                                    >
+                                      <div className="flex items-center justify-between text-[11px] font-semibold" style={{ color: 'var(--accent-text)' }}>
+                                        <span className="flex items-center gap-1">
+                                          <Icon name="note" className="w-3 h-3" />
+                                          <span>行間即時筆記</span>
+                                        </span>
+                                        {hasInlineNote && !isEditingInline && (
+                                          <button
+                                            onClick={() => setEditingInlineLineId(line.id)}
+                                            className="hover:underline flex items-center gap-0.5"
+                                          >
+                                            <Icon name="edit" className="w-3 h-3" />
+                                            <span>編輯</span>
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {isEditingInline ? (
+                                        <div className="space-y-2">
+                                          <textarea
+                                            defaultValue={inlineNotes[line.id] || ''}
+                                            autoFocus
+                                            rows={2}
+                                            placeholder="輸入您對本句的想法、心得或疑問（支援失焦自動儲存）..."
+                                            onBlur={(e) => {
+                                              const val = e.target.value.trim();
+                                              setInlineNotes((prev) => {
+                                                const next = { ...prev };
+                                                if (val) next[line.id] = val;
+                                                else delete next[line.id];
+                                                return next;
+                                              });
+                                              setEditingInlineLineId(null);
+                                              showToast(val ? '已儲存行內筆記' : '已移除筆記');
+                                            }}
+                                            style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
+                                            className="w-full p-2.5 rounded-lg border text-xs outline-none resize-none"
+                                          />
+                                          <div className="text-[10px] opacity-60 text-right">
+                                            點擊文字框外處即自動保存
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="leading-relaxed opacity-90 whitespace-pre-wrap">
+                                          {inlineNotes[line.id]}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* 自動播放進度條 */}
                                   {isActive && isAutoPlaying && (
-                                    <div className="mt-2.5 h-1 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                                    <div className="mt-2.5 h-1 w-full rounded-full overflow-hidden no-print" style={{ backgroundColor: 'var(--bg-subtle)' }}>
                                       <div
                                         style={{ width: `${autoPlayProgress}%`, backgroundColor: 'var(--accent)' }}
                                         className="h-full"
@@ -2865,12 +2535,11 @@ redrawAnnotationOverlay();
                       )}
                     </div>
 
-                    {/* 底部毛玻璃膠囊自動播放控制列 */}
+                    {/* 底部播放膠囊 */}
                     {readingLines.length > 0 && (
-                      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 max-w-[94vw]">
+                      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 max-w-[94vw] no-print">
                         <div
                           role="toolbar"
-                          aria-label="自動換行閱讀控制器"
                           style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
                           className="flex items-center gap-2.5 sm:gap-3 px-4 py-2 rounded-full border shadow-xl backdrop-blur-md"
                         >
@@ -2881,7 +2550,7 @@ redrawAnnotationOverlay();
                             }}
                             disabled={activeLineIdx <= 0}
                             className="p-1.5 rounded-full disabled:opacity-30 hover:opacity-80"
-                            title="上一行 (↑)"
+                            title="上一行"
                           >
                             <Icon name="up" className="w-4 h-4" />
                           </button>
@@ -2902,19 +2571,18 @@ redrawAnnotationOverlay();
                             }}
                             disabled={activeLineIdx >= readingLines.length - 1}
                             className="p-1.5 rounded-full disabled:opacity-30 hover:opacity-80"
-                            title="下一行 (↓)"
+                            title="下一行"
                           >
                             <Icon name="down" className="w-4 h-4" />
                           </button>
 
                           <div className="h-4 w-px" style={{ backgroundColor: 'var(--border-color)' }} />
-
                           <span className="text-[11px] font-mono whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
                             {activeLineIdx + 1} / {readingLines.length}
                           </span>
 
                           <div className="hidden sm:flex items-center gap-2 pl-2 border-l" style={{ borderColor: 'var(--border-color)' }}>
-                            <span className="text-[11px] whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>速度</span>
+                            <span className="text-[11px] whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>配速</span>
                             <input
                               type="range"
                               min="80"
@@ -2932,10 +2600,10 @@ redrawAnnotationOverlay();
                   </main>
                 )}
 
-                {/* 右欄／全寬：常規 PDF 畫布標註編輯器 */}
+                {/* PDF 畫布標註區 */}
                 {viewMode !== 'focus' && (
                   <section
-                    className={`flex flex-col min-h-0 overflow-hidden ${
+                    className={`flex flex-col min-h-0 overflow-hidden no-print ${
                       viewMode === 'split' ? 'hidden md:flex md:w-1/2' : 'flex-1'
                     }`}
                   >
@@ -2965,7 +2633,6 @@ redrawAnnotationOverlay();
                         </button>
 
                         <div className="h-4 w-px mx-1" style={{ backgroundColor: 'var(--border-color)' }} />
-
                         <button
                           onClick={() => setPdfZoom((z) => Math.max(0.7, Number((z - 0.15).toFixed(2))))}
                           style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
@@ -2990,24 +2657,6 @@ redrawAnnotationOverlay();
                           { id: 'note', label: '便利貼', icon: 'note' },
                           { id: 'eraser', label: '橡皮擦', icon: 'eraser' }
                         ].map((tool) => {
-                          {/* 直線 / 自由線 切換開關 */}
-{(pdfTool === 'marker' || pdfTool === 'pen') && (
-  <button
-    onClick={() => setDrawMode((m) => (m === 'line' ? 'free' : 'line'))}
-    style={
-      drawMode === 'line'
-        ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
-        : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
-    }
-    className="h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1 border transition"
-    title="切換直線模式（繪製時按住 Shift 鍵亦可自動拉直）"
-  >
-    <span>直線</span>
-    <span className="text-[10px] opacity-75">
-      {drawMode === 'line' ? 'ON' : 'OFF'}
-    </span>
-  </button>
-)}
                           const active = pdfTool === tool.id;
                           return (
                             <button
@@ -3026,6 +2675,23 @@ redrawAnnotationOverlay();
                           );
                         })}
 
+                        {/* 直線模式開關 */}
+                        {(pdfTool === 'marker' || pdfTool === 'pen') && (
+                          <button
+                            onClick={() => setDrawMode((m) => (m === 'line' ? 'free' : 'line'))}
+                            style={
+                              drawMode === 'line'
+                                ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
+                                : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
+                            }
+                            className="h-7 px-2 rounded-lg text-xs font-medium flex items-center gap-1 border transition"
+                            title="切換直線模式（按住 Shift 鍵亦可自動鎖定水平/垂直）"
+                          >
+                            <span>直線</span>
+                            <span className="text-[10px] font-bold">{drawMode === 'line' ? 'ON' : 'OFF'}</span>
+                          </button>
+                        )}
+
                         <div className="flex items-center gap-1.5 px-1">
                           {MARKER_COLORS.map((c) => (
                             <button
@@ -3043,22 +2709,6 @@ redrawAnnotationOverlay();
                         </div>
 
                         <button
-                          onClick={() =>
-                            setPdfAnnotations((prev) => {
-                              const idx = [...prev].reverse().findIndex((a) => a.page === currentPdfPage);
-                              if (idx === -1) return prev;
-                              const targetIdx = prev.length - 1 - idx;
-                              return prev.filter((_, i) => i !== targetIdx);
-                            })
-                          }
-                          style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                          className="h-7 px-2 rounded-lg border text-xs flex items-center"
-                          title="復原上一步標註"
-                        >
-                          <Icon name="undo" className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
                           onClick={() => setPdfSpotlightRuler((v) => !v)}
                           style={
                             pdfSpotlightRuler
@@ -3069,17 +2719,6 @@ redrawAnnotationOverlay();
                         >
                           <Icon name="eye" className="w-3.5 h-3.5" />
                           <span className="hidden sm:inline">閱讀尺</span>
-                        </button>
-
-                        <button
-                          onClick={handleOcrCurrentPdfPage}
-                          disabled={isOcrLoading}
-                          style={{ backgroundColor: 'var(--accent)' }}
-                          className="h-7 px-2.5 rounded-lg text-white text-xs font-medium flex items-center gap-1 whitespace-nowrap"
-                          title="使用個人 AI 金鑰辨識掃描圖片型 PDF 頁面並匯入專注閱讀區"
-                        >
-                          <Icon name="camera" className="w-3.5 h-3.5" />
-                          <span>{isOcrLoading ? '辨識中...' : 'AI 圖片轉文字'}</span>
                         </button>
                       </div>
                     </div>
@@ -3096,7 +2735,6 @@ redrawAnnotationOverlay();
                           onPointerDown={handleOverlayPointerDown}
                           className={`absolute inset-0 touch-none ${pdfTool === 'cursor' ? 'cursor-default' : 'cursor-crosshair'}`}
                         />
-
                         {pdfSpotlightRuler && (
                           <div className="absolute inset-0 pointer-events-none">
                             <div style={{ height: `${Math.max(0, rulerYRatio * 100 - 6)}%`, backgroundColor: 'rgba(30,34,40,0.62)' }} className="w-full" />
@@ -3104,53 +2742,6 @@ redrawAnnotationOverlay();
                             <div style={{ backgroundColor: 'rgba(30,34,40,0.62)' }} className="h-full w-full" />
                           </div>
                         )}
-
-                        {pdfAnnotations
-                          .filter((a) => a.page === currentPdfPage && a.type === 'note')
-                          .map((note) => {
-                            const cObj = MARKER_COLORS.find((c) => c.id === note.colorId) || MARKER_COLORS[0];
-                            const isEditing = editingStickyId === note.id;
-                            return (
-                              <div
-                                key={note.id}
-                                style={{ left: `${note.x * 100}%`, top: `${note.y * 100}%`, backgroundColor: cObj.hex }}
-                                className="absolute w-44 rounded-xl p-2 shadow-lg text-neutral-900 text-xs border border-black/15 z-10"
-                              >
-                                <div
-                                  onPointerDown={(e) => {
-                                    e.stopPropagation();
-                                    draggingNoteRef.current = note.id;
-                                  }}
-                                  className="flex items-center justify-between pb-1 mb-1 border-b border-black/15 cursor-move text-[10px] font-bold opacity-80"
-                                >
-                                  <span>便利貼（拖曳移動）</span>
-                                  <button
-                                    onClick={() => setPdfAnnotations((prev) => prev.filter((a) => a.id !== note.id))}
-                                  >
-                                    <Icon name="x" className="w-3 h-3" />
-                                  </button>
-                                </div>
-                                {isEditing ? (
-                                  <textarea
-                                    value={note.text}
-                                    autoFocus
-                                    rows={3}
-                                    onChange={(e) =>
-                                      setPdfAnnotations((prev) =>
-                                        prev.map((a) => (a.id === note.id ? { ...a, text: e.target.value } : a))
-                                      )
-                                    }
-                                    onBlur={() => setEditingStickyId(null)}
-                                    className="w-full bg-white/75 rounded p-1 text-xs outline-none resize-none"
-                                  />
-                                ) : (
-                                  <div onClick={() => setEditingStickyId(note.id)} className="whitespace-pre-wrap break-words cursor-text min-h-[36px]">
-                                    {note.text}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
                       </div>
                     </div>
                   </section>
@@ -3158,22 +2749,14 @@ redrawAnnotationOverlay();
               </>
             )}
 
-            {/* 右側可收合側邊欄：問問 AI & 重點筆記 */}
+            {/* 右側邊欄：重點筆記（卡片編輯 + 定位跳回 + 標籤分類）& 問問 AI（釘選按鈕） */}
             {showRightSidebar && (
               <aside
                 style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-                className="w-full sm:w-[390px] border-l flex flex-col shrink-0 z-30"
+                className="w-full sm:w-[410px] border-l flex flex-col shrink-0 z-30 no-print"
               >
                 <div className="p-3 border-b flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-color)' }}>
                   <div className="flex flex-1 p-1 rounded-xl border" style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}>
-                    <button
-                      onClick={() => setSidebarTab('ai')}
-                      style={sidebarTab === 'ai' ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}
-                      className="flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition"
-                    >
-                      <Icon name="chat" className="w-3.5 h-3.5" />
-                      <span>問問 {aiProvider === 'openai' ? 'ChatGPT' : 'Gemini'}</span>
-                    </button>
                     <button
                       onClick={() => setSidebarTab('highlights')}
                       style={sidebarTab === 'highlights' ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}
@@ -3182,19 +2765,168 @@ redrawAnnotationOverlay();
                       <Icon name="bookmark" className="w-3.5 h-3.5" />
                       <span>重點筆記 ({textHighlights.length})</span>
                     </button>
+                    <button
+                      onClick={() => setSidebarTab('ai')}
+                      style={sidebarTab === 'ai' ? { backgroundColor: 'var(--accent)', color: '#fff' } : {}}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                    >
+                      <Icon name="chat" className="w-3.5 h-3.5" />
+                      <span>問問 {aiProvider === 'openai' ? 'ChatGPT' : 'Gemini'}</span>
+                    </button>
                   </div>
                   <button onClick={() => setShowRightSidebar(false)} className="p-1.5 rounded-lg opacity-70 hover:opacity-100">
                     <Icon name="x" className="w-4 h-4" />
                   </button>
                 </div>
 
-                {sidebarTab === 'ai' ? (
+                {sidebarTab === 'highlights' ? (
+                  /* 重點筆記清單與編輯視窗 */
+                  <div className="flex-1 flex flex-col min-h-0">
+                    {/* 標籤分類水平滾動過濾列 */}
+                    <div className="p-2.5 border-b flex items-center gap-1.5 overflow-x-auto text-[11px]" style={{ borderColor: 'var(--border-color)' }}>
+                      <span className="opacity-60 shrink-0 ml-1"><Icon name="tag" className="w-3 h-3" /></span>
+                      <button
+                        onClick={() => setSelectedTagFilter('ALL')}
+                        style={selectedTagFilter === 'ALL' ? { backgroundColor: 'var(--accent)', color: '#fff' } : { backgroundColor: 'var(--bg-subtle)' }}
+                        className="px-2.5 py-1 rounded-lg shrink-0 font-medium transition"
+                      >
+                        全部 ({textHighlights.length})
+                      </button>
+                      {allExistingTags.map((tag) => (
+                        <button
+                          key={tag}
+                          onClick={() => setSelectedTagFilter(tag)}
+                          style={selectedTagFilter === tag ? { backgroundColor: 'var(--accent)', color: '#fff' } : { backgroundColor: 'var(--bg-subtle)' }}
+                          className="px-2.5 py-1 rounded-lg shrink-0 font-medium transition"
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-3.5 space-y-3 text-xs">
+                      {filteredHighlights.length === 0 ? (
+                        <div className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
+                          尚無此分類標註。在文章中反白或長按即可新增重點！
+                        </div>
+                      ) : (
+                        filteredHighlights.map((hl) => {
+                          const cObj = MARKER_COLORS.find((c) => c.id === hl.colorId) || MARKER_COLORS[0];
+                          const isEditing = editingHlNoteId === hl.id;
+
+                          return (
+                            <div
+                              key={hl.id}
+                              style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                              className="rounded-2xl border p-3.5 space-y-2.5 shadow-sm transition hover:border-slate-500/40"
+                            >
+                              <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <span style={{ backgroundColor: cObj.hex }} className="w-2.5 h-2.5 rounded-full inline-block" />
+                                  <span>P.{hl.pageNumber || 1} • {hl.createdAt || '重點'}</span>
+                                  {hl.tag && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'var(--bg-panel)' }}>
+                                      #{hl.tag}
+                                    </span>
+                                  )}
+                                </span>
+                                <button
+                                  onClick={() => setTextHighlights((prev) => prev.filter((x) => x.id !== hl.id))}
+                                  className="opacity-55 hover:opacity-100"
+                                  title="刪除標註"
+                                >
+                                  <Icon name="trash" className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <p className="font-semibold leading-relaxed">「{hl.quote}」</p>
+
+                              {/* 卡片註釋：點擊就地切換文字框編輯並自動儲存 */}
+                              <div
+                                onClick={() => {
+                                  if (!isEditing) {
+                                    setEditingHlNoteId(hl.id);
+                                    setEditingHlDraft(hl.note || '');
+                                  }
+                                }}
+                                style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
+                                className="rounded-xl p-2.5 border cursor-pointer transition hover:opacity-95"
+                                title="點擊編輯此筆記"
+                              >
+                                {isEditing ? (
+                                  <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                                    <textarea
+                                      value={editingHlDraft}
+                                      autoFocus
+                                      rows={3}
+                                      onChange={(e) => setEditingHlDraft(e.target.value)}
+                                      onBlur={() => {
+                                        setTextHighlights((prev) =>
+                                          prev.map((item) => (item.id === hl.id ? { ...item, note: editingHlDraft.trim() } : item))
+                                        );
+                                        setEditingHlNoteId(null);
+                                        showToast('已儲存重點筆記');
+                                      }}
+                                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--accent)', color: 'var(--text-main)' }}
+                                      className="w-full p-2 rounded-lg border text-xs outline-none resize-none"
+                                    />
+                                    <div className="flex items-center justify-between text-[10px] opacity-60">
+                                      <span>點擊框外自動儲存</span>
+                                      <select
+                                        value={hl.tag || '重要概念'}
+                                        onChange={(e) => {
+                                          const nextTag = e.target.value;
+                                          setTextHighlights((prev) =>
+                                            prev.map((item) => (item.id === hl.id ? { ...item, tag: nextTag } : item))
+                                          );
+                                        }}
+                                        style={{ backgroundColor: 'var(--bg-subtle)' }}
+                                        className="rounded px-1.5 py-0.5 border"
+                                      >
+                                        {DEFAULT_NOTE_TAGS.map((t) => (
+                                          <option key={t} value={t}>{t}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="leading-relaxed opacity-90 text-[11px]">
+                                    {hl.note ? (
+                                      <div className="whitespace-pre-wrap">{hl.note}</div>
+                                    ) : (
+                                      <span className="opacity-50 italic flex items-center gap-1">
+                                        <Icon name="edit" className="w-3 h-3" />
+                                        <span>點擊此處輸入個人註釋與筆記...</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 右下角小按鈕：平滑跳回文章該段落 (Scroll-to-Target) */}
+                              <div className="flex justify-end pt-1">
+                                <button
+                                  onClick={() => handleJumpToLine(hl.lineId, hl.lineIndex)}
+                                  style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', borderColor: 'var(--accent)' }}
+                                  className="px-2.5 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition hover:opacity-90 shadow-sm"
+                                  title="點擊立即平滑捲動置中回該段落並高亮"
+                                >
+                                  <Icon name="locate" className="w-3 h-3" />
+                                  <span>跳回該段落 ↗</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* 問問 AI 分頁 */
                   <>
-                    <div className="px-3 py-2.5 border-b grid grid-cols-2 gap-2 text-xs" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="px-3 py-2 border-b grid grid-cols-2 gap-2 text-xs" style={{ borderColor: 'var(--border-color)' }}>
                       <div>
-                        <label className="text-[10px] block mb-1" style={{ color: 'var(--text-muted)' }}>
-                          模型選擇 ({aiProvider === 'openai' ? 'OpenAI' : 'Gemini'})
-                        </label>
+                        <label className="text-[10px] block mb-1 opacity-70">模型選擇</label>
                         <select
                           value={selectedModel}
                           onChange={(e) => setSelectedModel(e.target.value)}
@@ -3207,9 +2939,9 @@ redrawAnnotationOverlay();
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] flex items-center gap-1 mb-1" style={{ color: 'var(--text-muted)' }}>
+                        <label className="text-[10px] flex items-center gap-1 mb-1 opacity-70">
                           <Icon name="brain" className="w-3 h-3" />
-                          <span>思考程度</span>
+                          <span>思考推演</span>
                         </label>
                         <select
                           value={thinkingLevel}
@@ -3241,21 +2973,26 @@ redrawAnnotationOverlay();
                                 <Icon name="sparkles" className="w-3 h-3" />
                                 <span>{msg.model || 'AI'}</span>
                               </span>
-                              <span>{msg.thinkingLabel}</span>
+                              <div className="flex items-center gap-2">
+                                <span>{msg.thinkingLabel}</span>
+                                {msg.id !== 'welcome-msg' && (
+                                  <button
+                                    onClick={() => handlePinChatAsNote(msg)}
+                                    className="p-1 rounded hover:bg-black/15 flex items-center gap-0.5"
+                                    title="釘選此回答為段落重點筆記"
+                                  >
+                                    <Icon name="pin" className="w-3 h-3 text-amber-400" />
+                                    <span>釘選為筆記</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           )}
 
                           {msg.quote && (
-                            <div className="rounded-lg bg-black/15 px-2.5 py-1.5 text-[11px] border-l-2 italic" style={{ borderColor: '#c8a86b' }}>
-                              「{msg.quote}」 {msg.pageNumber ? `(P.${msg.pageNumber})` : ''}
+                            <div className="rounded-lg bg-black/15 px-2.5 py-1 text-[11px] border-l-2 italic" style={{ borderColor: '#c8a86b' }}>
+                              「{msg.quote}」
                             </div>
-                          )}
-
-                          {msg.thought && (
-                            <details className="rounded-lg bg-black/10 p-2 text-[11px] opacity-85">
-                              <summary className="cursor-pointer font-medium">查看思考推演過程</summary>
-                              <p className="mt-1.5 whitespace-pre-wrap">{msg.thought}</p>
-                            </details>
                           )}
 
                           <div className="whitespace-pre-wrap break-words">{msg.content}</div>
@@ -3267,7 +3004,7 @@ redrawAnnotationOverlay();
                           style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
                           className="rounded-2xl p-3 border mr-6 text-xs opacity-80"
                         >
-                          正在結合文章上下文思考中...
+                          Gemini 正在結合前後文思考中...
                         </div>
                       )}
                       <div ref={chatEndRef} />
@@ -3277,15 +3014,15 @@ redrawAnnotationOverlay();
                       {quotedContext && (
                         <div
                           style={{ backgroundColor: 'var(--accent-soft)', borderColor: 'var(--accent)' }}
-                          className="rounded-xl border p-2.5 text-xs flex items-start justify-between gap-2"
+                          className="rounded-xl border p-2 text-xs flex items-start justify-between gap-2"
                         >
                           <div className="min-w-0">
-                            <div className="text-[10px] font-bold mb-0.5" style={{ color: 'var(--accent-text)' }}>
-                              已選中詞句 (P.{quotedContext.pageNumber})
+                            <div className="text-[10px] font-bold" style={{ color: 'var(--accent-text)' }}>
+                              已引用詞句 (P.{quotedContext.pageNumber})
                             </div>
-                            <p className="line-clamp-3 italic">「{quotedContext.quote}」</p>
+                            <p className="line-clamp-2 italic">「{quotedContext.quote}」</p>
                           </div>
-                          <button type="button" onClick={() => setQuotedContext(null)} className="p-1 opacity-70 hover:opacity-100 shrink-0">
+                          <button type="button" onClick={() => setQuotedContext(null)} className="p-1 opacity-70 hover:opacity-100">
                             <Icon name="x" className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -3302,7 +3039,7 @@ redrawAnnotationOverlay();
                             }
                           }}
                           rows={2}
-                          placeholder={quotedContext ? '補充您的問題（直接按 Enter 送出）...' : '針對文章內容提問...'}
+                          placeholder={quotedContext ? '補充問題（Enter 送出）...' : '針對文獻提問...'}
                           style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                           className="flex-1 rounded-2xl border px-3.5 py-2 text-xs outline-none resize-none"
                         />
@@ -3317,47 +3054,12 @@ redrawAnnotationOverlay();
                       </div>
                     </form>
                   </>
-                ) : (
-                  <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5 text-xs">
-                    {textHighlights.length === 0 ? (
-                      <div className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
-                        反白或長按文章詞句，即可畫重點或保存語境深譯筆記
-                      </div>
-                    ) : (
-                      textHighlights.map((hl) => {
-                        const cObj = MARKER_COLORS.find((c) => c.id === hl.colorId) || MARKER_COLORS[0];
-                        return (
-                          <div
-                            key={hl.id}
-                            style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                            className="rounded-xl border p-3 space-y-1.5"
-                          >
-                            <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                              <span className="flex items-center gap-1.5 font-medium">
-                                <span style={{ backgroundColor: cObj.hex }} className="w-2.5 h-2.5 rounded-full inline-block" />
-                                Page {hl.pageNumber || 1} • {hl.createdAt || '重點'}
-                              </span>
-                              <button onClick={() => setTextHighlights((prev) => prev.filter((x) => x.id !== hl.id))} className="hover:opacity-100 opacity-65">
-                                <Icon name="trash" className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                            <p className="font-medium leading-relaxed">「{hl.quote}」</p>
-                            {hl.note && (
-                              <p className="text-[11px] rounded-lg p-2 leading-relaxed" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-muted)' }}>
-                                {hl.note}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
                 )}
               </aside>
             )}
           </div>
 
-          {/* 長按 / 反白智慧查詢懸浮框 */}
+          {/* 長按 / 反白查詢懸浮彈窗 */}
           {selectionPopover && (
             <div
               onClick={(e) => e.stopPropagation()}
@@ -3368,9 +3070,8 @@ redrawAnnotationOverlay();
                 backgroundColor: 'var(--bg-panel)',
                 borderColor: 'var(--border-color)'
               }}
-              className="fixed z-50 w-[335px] sm:w-[390px] rounded-2xl border p-3.5 shadow-2xl space-y-2.5"
+              className="fixed z-50 w-[335px] sm:w-[390px] rounded-2xl border p-3.5 shadow-2xl space-y-2.5 no-print"
             >
-              {/* 反白即翻區塊 (免金鑰公開字典極速直譯) */}
               {settings.instantTranslate && (
                 <div
                   style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
@@ -3379,7 +3080,7 @@ redrawAnnotationOverlay();
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-[10px] font-bold flex items-center gap-1" style={{ color: 'var(--warn)' }}>
                       <Icon name="zap" className="w-3 h-3" />
-                      <span>反白即翻（免金鑰快速字典）</span>
+                      <span>反白即翻（免金鑰字典）</span>
                     </span>
                     <button onClick={() => setSelectionPopover(null)} className="opacity-60 hover:opacity-100">
                       <Icon name="x" className="w-3.5 h-3.5" />
@@ -3388,9 +3089,7 @@ redrawAnnotationOverlay();
                   {selectionPopover.quickLoading ? (
                     <p className="py-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>字典查詢中...</p>
                   ) : selectionPopover.quickError ? (
-                    <p className="text-[11px]" style={{ color: 'var(--warn)' }}>
-                      {selectionPopover.quickError}
-                    </p>
+                    <p className="text-[11px]" style={{ color: 'var(--warn)' }}>{selectionPopover.quickError}</p>
                   ) : selectionPopover.quickResult ? (
                     <div>
                       <p className="font-semibold text-sm leading-snug">{selectionPopover.quickResult.translation}</p>
@@ -3404,7 +3103,7 @@ redrawAnnotationOverlay();
                 </div>
               )}
 
-              {/* 操作列：莫蘭迪 4 色重點 + 語境深譯 (Gemini) + 問問 AI (側欄) */}
+              {/* 4 色重點 + 語境深譯 + 問問 AI */}
               <div className="flex items-center justify-between gap-1.5 flex-wrap">
                 <div className="flex items-center gap-1.5">
                   {MARKER_COLORS.map((c) => (
@@ -3413,7 +3112,7 @@ redrawAnnotationOverlay();
                       onClick={() => handleAddHighlight(c.id)}
                       style={{ backgroundColor: c.hex }}
                       className="w-5 h-5 rounded-full border border-black/20 hover:scale-110 transition"
-                      title={`以${c.name}畫重點`}
+                      title={`以${c.name}標記重點`}
                     />
                   ))}
                 </div>
@@ -3430,19 +3129,22 @@ redrawAnnotationOverlay();
                   </button>
 
                   <button
-                    onClick={handleAskAiFromSelection}
+                    onClick={() => {
+                      setQuotedContext({
+                        quote: selectionPopover.quote,
+                        paragraphContext: selectionPopover.paragraphContext,
+                        pageNumber: selectionPopover.pageNumber
+                      });
+                      setSelectionPopover(null);
+                      setSidebarTab('ai');
+                      setShowRightSidebar(true);
+                    }}
                     style={{ backgroundColor: 'var(--accent)' }}
                     className="h-8 px-2.5 rounded-xl text-white text-xs font-semibold flex items-center gap-1 transition"
                   >
                     <Icon name="sparkles" className="w-3.5 h-3.5" />
                     <span>問問 AI</span>
                   </button>
-
-                  {!settings.instantTranslate && (
-                    <button onClick={() => setSelectionPopover(null)} className="p-1.5 rounded-lg opacity-70 hover:opacity-100">
-                      <Icon name="x" className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -3459,42 +3161,32 @@ redrawAnnotationOverlay();
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-subtle)' }}>
                       {selectionPopover.deepResult.detectedGenre}
                     </span>
-                    <button onClick={() => handleAddHighlight('ochre')} className="text-[11px] underline font-medium">
+                    <button onClick={() => handleAddHighlight('ochre', '語境深譯')} className="text-[11px] underline font-medium">
                       + 存為重點筆記
                     </button>
                   </div>
                   <p className="font-bold text-sm leading-relaxed">{selectionPopover.deepResult.rigorousTranslation}</p>
                   <p className="leading-relaxed opacity-90">
-                    <span className="font-semibold">前後文脈絡解析：</span>
+                    <span className="font-semibold">前後文解析：</span>
                     {selectionPopover.deepResult.contextualNuance}
                   </p>
-                  {selectionPopover.deepResult.keyTerms?.length > 0 && (
-                    <div className="pt-1.5 border-t space-y-1" style={{ borderColor: 'var(--border-color)' }}>
-                      {selectionPopover.deepResult.keyTerms.map((kt, i) => (
-                        <div key={i} className="text-[11px]">
-                          <span className="font-semibold">{kt.term}：</span>
-                          <span className="opacity-85">{kt.meaningInContext}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* 帳號與 AI 連線設定視窗 */}
+          {/* 帳號與 AI 設定視窗 */}
           {showAccountModal && (
-            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
               <div
                 style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
                 className="w-full max-w-lg rounded-2xl border p-5 shadow-2xl space-y-4 max-h-[88vh] overflow-y-auto"
               >
                 <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
                   <div>
-                    <h2 className="text-sm font-bold">個人獨立空間與 Google Gemini / ChatGPT 連線設定</h2>
+                    <h2 className="text-sm font-bold">個人帳號空間與 AI 金鑰設定</h2>
                     <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      「反白即翻」已內建免費高速字典；此處設定的金鑰僅用於「語境深譯」、「AI 側欄」與「圖片 OCR」
+                      「反白即翻」走免金鑰免費字典；此處金鑰僅用於「語境深譯」與「問問 AI」
                     </p>
                   </div>
                   <button onClick={() => setShowAccountModal(false)} className="p-1 opacity-70 hover:opacity-100">
@@ -3502,18 +3194,7 @@ redrawAnnotationOverlay();
                   </button>
                 </div>
 
-                <div
-                  style={{ backgroundColor: 'var(--accent-soft)', borderColor: 'var(--accent)' }}
-                  className="rounded-xl border p-3 text-xs flex items-start gap-2.5"
-                >
-                  <span className="mt-0.5 shrink-0"><Icon name="shield" className="w-4 h-4" /></span>
-                  <div className="leading-relaxed">
-                    <strong>100% 獨立隱私保護：</strong>您匯入的 PDF、標註與金鑰皆儲存在您個人瀏覽器的 IndexedDB 中，絕不會上傳至 GitHub 公開伺服器，其他人打開網址時完全看不到您的任何檔案與筆記。
-                  </div>
-                </div>
-
                 <div className="space-y-2.5">
-                  <label className="text-xs font-semibold block">選擇深度語境翻譯與側欄問答的 AI 引擎</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -3523,7 +3204,7 @@ redrawAnnotationOverlay();
                         color: aiProvider === 'gemini' ? '#fff' : 'var(--text-main)',
                         borderColor: aiProvider === 'gemini' ? 'var(--accent)' : 'var(--border-color)'
                       }}
-                      className="py-2.5 px-3 rounded-xl border text-xs font-semibold transition"
+                      className="py-2 px-3 rounded-xl border text-xs font-semibold"
                     >
                       Google Gemini 3.8
                     </button>
@@ -3535,56 +3216,42 @@ redrawAnnotationOverlay();
                         color: aiProvider === 'openai' ? '#fff' : 'var(--text-main)',
                         borderColor: aiProvider === 'openai' ? 'var(--accent)' : 'var(--border-color)'
                       }}
-                      className="py-2.5 px-3 rounded-xl border text-xs font-semibold transition"
+                      className="py-2 px-3 rounded-xl border text-xs font-semibold"
                     >
-                      OpenAI ChatGPT (GPT-4o / o3)
+                      OpenAI ChatGPT
                     </button>
                   </div>
 
                   {aiProvider === 'gemini' ? (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium">個人 Google Gemini API Key</span>
-                        <a
-                          href="https://aistudio.google.com/apikey"
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: 'var(--accent-text)' }}
-                          className="text-[11px] underline flex items-center gap-1"
-                        >
-                          <span>前往 Google AI Studio 取得金鑰</span>
-                          <Icon name="external" className="w-3 h-3" />
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span>Google Gemini API Key</span>
+                        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="underline text-[11px]" style={{ color: 'var(--accent-text)' }}>
+                          前往 AI Studio 取得
                         </a>
                       </div>
                       <input
                         type="password"
                         value={geminiKeyDraft}
                         onChange={(e) => setGeminiKeyDraft(e.target.value)}
-                        placeholder="貼上 AIzaSy... 開頭的個人金鑰"
+                        placeholder="貼上 AIzaSy... 開頭金鑰"
                         style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                         className="w-full px-3 py-2 rounded-xl border text-xs outline-none"
                       />
                     </div>
                   ) : (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium">個人 OpenAI (ChatGPT) API Key</span>
-                        <a
-                          href="https://platform.openai.com/api-keys"
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: 'var(--accent-text)' }}
-                          className="text-[11px] underline flex items-center gap-1"
-                        >
-                          <span>登入 OpenAI 帳號取得金鑰</span>
-                          <Icon name="external" className="w-3 h-3" />
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span>OpenAI API Key</span>
+                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="underline text-[11px]" style={{ color: 'var(--accent-text)' }}>
+                          前往 OpenAI 取得
                         </a>
                       </div>
                       <input
                         type="password"
                         value={openaiKeyDraft}
                         onChange={(e) => setOpenaiKeyDraft(e.target.value)}
-                        placeholder="貼上 sk-... 開頭的個人 OpenAI 金鑰"
+                        placeholder="貼上 sk-... 開頭金鑰"
                         style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                         className="w-full px-3 py-2 rounded-xl border text-xs outline-none"
                       />
@@ -3592,107 +3259,37 @@ redrawAnnotationOverlay();
                   )}
                 </div>
 
-                {/* 同裝置多帳號獨立書庫切換 */}
-                <div
-                  style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                  className="rounded-xl border p-3.5 space-y-2.5 text-xs"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-bold">目前書庫空間：{currentAccountDisplay.name}</div>
-                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{currentAccountDisplay.email}</div>
-                    </div>
-                    {currentAccountDisplay.isCustom && (
-                      <button
-                        type="button"
-                        onClick={handleLogoutWorkspace}
-                        style={{ borderColor: 'var(--border-color)' }}
-                        className="h-8 px-2.5 rounded-lg border flex items-center gap-1 text-[11px]"
-                      >
-                        <Icon name="logout" className="w-3.5 h-3.5" />
-                        <span>切回預設</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <form onSubmit={handleSwitchAccountWorkspace} className="flex gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={switchEmailDraft}
-                      onChange={(e) => setSwitchEmailDraft(e.target.value)}
-                      placeholder="輸入 Email 或暱稱切換同裝置獨立書庫..."
-                      style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                      className="flex-1 px-3 py-1.5 rounded-lg border text-xs outline-none"
-                    />
-                    <button
-                      type="submit"
-                      style={{ backgroundColor: 'var(--accent)' }}
-                      className="px-3 py-1.5 rounded-lg text-white font-medium whitespace-nowrap"
-                    >
-                      切換空間
-                    </button>
-                  </form>
-
-                  {googleClientId && <div ref={googleBtnContainerRef} className="pt-1" />}
-                </div>
-
-                {/* 選填本機 PIN 碼鎖 */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold flex items-center gap-1.5">
-                    <Icon name="lock" className="w-3.5 h-3.5" />
-                    <span>個人空間密碼鎖（選填）</span>
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={pinDraft}
-                      onChange={(e) => setPinDraft(e.target.value)}
-                      placeholder="留空不設密碼；填寫可為此書庫加上螢幕鎖"
-                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                      className="flex-1 px-3 py-2 rounded-xl border text-xs outline-none"
-                    />
-                    {pinCode && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAccountModal(false);
-                          setIsLocked(true);
-                        }}
-                        style={{ borderColor: 'var(--border-color)' }}
-                        className="px-3 py-2 rounded-xl border text-xs whitespace-nowrap"
-                      >
-                        立即鎖定
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowAccountModal(false)}
-                    className="px-3.5 py-2 rounded-xl text-xs opacity-75 hover:opacity-100"
-                  >
+                <div className="pt-2 border-t flex justify-end gap-2" style={{ borderColor: 'var(--border-color)' }}>
+                  <button onClick={() => setShowAccountModal(false)} className="px-3.5 py-2 rounded-xl text-xs opacity-75">
                     取消
                   </button>
                   <button
-                    type="button"
-                    onClick={handleSaveAccountAndKeys}
+                    onClick={async () => {
+                      setGeminiApiKey(geminiKeyDraft.trim());
+                      setOpenaiApiKey(openaiKeyDraft.trim());
+                      await Promise.all([
+                        idbSetScopedKV(currentOwnerUid, 'aiProvider', aiProvider),
+                        idbSetScopedKV(currentOwnerUid, 'geminiApiKey', geminiKeyDraft.trim()),
+                        idbSetScopedKV(currentOwnerUid, 'openaiApiKey', openaiKeyDraft.trim())
+                      ]);
+                      setShowAccountModal(false);
+                      showToast('已更新個人 AI 金鑰設定');
+                    }}
                     style={{ backgroundColor: 'var(--accent)' }}
                     className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
                   >
-                    儲存連線設定
+                    儲存設定
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 頂部柔和通知橫幅 */}
+          {/* 輕量 Toast 通知 */}
           {toastMsg && (
             <div
               style={{ backgroundColor: 'var(--accent)' }}
-              className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-white text-xs font-medium shadow-lg pointer-events-none"
+              className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-white text-xs font-medium shadow-lg pointer-events-none no-print"
             >
               {toastMsg}
             </div>
