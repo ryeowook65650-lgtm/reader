@@ -208,7 +208,10 @@
       .note-btn-wrap { opacity: 0; transition: opacity 0.15s; }
       .group:hover .note-btn-wrap, .note-btn-wrap:focus-within { opacity: 1; }
     }
-    @media (hover: none) { .note-btn-wrap { opacity: 1; } }
+    @media (hover: none) {
+      .note-btn-wrap { opacity: 1; }
+      [data-line-text] { padding-right: 6rem; } /* 預留「+ 筆記」按鈕的位置，文字不會被蓋住 */
+    }
     /* 雙欄分隔線：畫面上的線固定 8px；觸控時可點擊區放大到 44px */
     .split-divider::before {
       content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 8px;
@@ -258,7 +261,9 @@
 
     // LocalStorage 同步鍵名（確保第 0 秒同步讀取，不彈窗、不遺失）
     const LS_KEYS = {
-      API_KEY: 'ADHD_READER_GEMINI_API_KEY_V4',
+      API_KEY: 'ADHD_READER_GEMINI_API_KEY_V4', // Gemini 金鑰沿用原本的欄位（舊使用者自動保留）
+      AI_CONFIG: 'ADHD_READER_AI_CONFIG_V1',
+      AI_KEYS: 'ADHD_READER_AI_KEYS_V1',
       SETTINGS: 'ADHD_READER_SETTINGS_V4',
       CUSTOM_TAGS: 'ADHD_READER_CUSTOM_TAGS_V4',
       FOLDERS: 'ADHD_READER_FOLDERS_V4',
@@ -537,22 +542,23 @@
       instantTranslate: true,
       filterHeaderFooter: true,
       pdfContinuousScroll: true,
-      adhdMode: false // ADHD 專注模式（逐句聚光燈）：預設關閉，顯示完整段落
+      adhdMode: false, // ADHD 專注模式（逐句聚光燈）：預設關閉，顯示完整段落
+      fingerDraw: false // 書寫模式下手指是否也能寫（預設：觸控筆書寫、手指捲動）
     };
 
     const DEFAULT_WELCOME_MESSAGES = () => [
       {
         id: 'welcome-msg',
         role: 'assistant',
-        model: LOCKED_GEMINI_MODEL,
+        model: 'AI',
         thinkingLabel: '就緒',
         content:
-          '歡迎使用 ADHD 專注閱讀器（深度筆記強化版）！\n\n• 反白選字：立即顯示「反白即翻」免金鑰直譯；點擊「語境深譯」呼叫 gemini-3.8-flash 嚴謹解析。\n• 筆記與自訂 Hashtag：編輯筆記時即時自動存檔，自由切換或新增標籤，點「完成」才收合。\n• 雙欄拖曳與連續滾動：雙欄中間分隔線可自由拉動比例（雙擊重置 50:50），PDF 支援連續滾動、便利貼、復原與保存標註 PDF。'
+          '歡迎使用 ADHD 專注閱讀器（深度筆記強化版）！\n\n• 反白選字：立即顯示「反白即翻」免金鑰直譯；點擊「語境深譯」呼叫您選擇的 AI 嚴謹解析（請先到右上角「AI 設定」選擇服務並輸入金鑰）。\n• 筆記與自訂標籤：編輯筆記時即時自動存檔，自由切換或新增標籤，點「完成」才收合。\n• 雙欄拖曳與連續滾動：雙欄中間分隔線可自由拉動比例（雙擊重置 50:50），PDF 支援連續滾動、便利貼、復原與保存標註 PDF。'
       }
     ];
 
     // =========================================================================
-    // 4. 文字分句、PDF 擷取、離屏 Canvas 轉圖片（供標註 PDF 嵌入中文）與 Gemini 呼叫
+    // 4. 文字分句、PDF 擷取、離屏 Canvas 轉圖片（供標註 PDF 嵌入中文）與 AI 呼叫
     // =========================================================================
     function formatFileSize(bytes) {
       if (!bytes || bytes <= 0) return 'PDF 檔案';
@@ -871,6 +877,16 @@
     // ==== HL-END ====
 
     // ==== SYNC-BEGIN（同步重點至 PDF：文字比對與座標計算，純函式）====
+    // 文字片段的「字高」：從文字矩陣的垂直軸（c, d）量，不是水平軸（a, b）。
+    // 掃描檔的 OCR 文字層會把每一行水平拉伸去貼合影像，水平軸（a）每行都不同（實測 10.8～15.7），
+    // 但真正的字高（d、item.height）固定不變；若用水平軸，同一段落裡就會有些行「看起來」比內文大 20%～30%。
+    function pdfItemFontHeight(item) {
+      const tr = (item && item.transform) || [1, 0, 0, 1, 0, 0];
+      const vertical = Math.hypot(tr[2] || 0, tr[3] || 0);
+      const horizontal = Math.hypot(tr[0] || 0, tr[1] || 0);
+      return Math.max(8, vertical || Number(item && item.height) || horizontal || 12);
+    }
+
     function sortTextItemsReadingOrder(items) {
       items.sort((a, b) => {
         if (Math.abs(b.y - a.y) > Math.min(a.h, b.h) * 0.45) return b.y - a.y;
@@ -900,7 +916,7 @@
         const str = (it.str || '').replace(/\u0000/g, '');
         if (!str.trim()) continue;
         const tr = it.transform || [1, 0, 0, 1, 0, 0];
-        const fontH = Math.max(8, Math.hypot(tr[0], tr[1]) || it.height || 12);
+        const fontH = pdfItemFontHeight(it);
         items.push({ str, x: tr[4], y: tr[5], w: it.width || str.length * fontH * 0.5, h: fontH });
       }
       sortTextItemsReadingOrder(items);
@@ -1215,30 +1231,46 @@
       return merged;
     }
 
+    // 把「因為版面換行而斷開」的兩段文字接回去：
+    //   英文行尾連字號 + 小寫開頭 → 去掉連字號直接接（inter- + national → international）
+    //   其他連字號（Anglo- + American、2019- + 2020）→ 保留連字號、不加空格
+    //   前後任一邊是中日韓字元／全形標點 → 不加空格；只有兩邊都是英數字才補一個空格
     function joinBlockText(prevText, nextText) {
-      if (/[a-zA-Z]-$/.test(prevText) && /^[a-z]/.test(nextText)) {
-        return { base: prevText.slice(0, -1), joiner: '' };
+      const cjk = (c) => /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f]/.test(c);
+      if (/[-\u2010\u00ad]$/.test(prevText) && /^[A-Za-z0-9]/.test(nextText)) {
+        if (/[A-Za-z\u00c0-\u024f][-\u2010\u00ad]$/.test(prevText) && /^[a-z\u00df-\u00ff]/.test(nextText)) {
+          return { base: prevText.slice(0, -1), joiner: '' };
+        }
+        return { base: prevText, joiner: '' };
       }
-      const bothCJK =
-        /[\u4e00-\u9fff，。；：「」『』（）！？”’]$/.test(prevText) && /^[\u4e00-\u9fff「『（]/.test(nextText);
-      return { base: prevText, joiner: bothCJK ? '' : ' ' };
+      const a = prevText.slice(-1);
+      const b = nextText.charAt(0);
+      if (cjk(a) || cjk(b)) return { base: prevText, joiner: '' };
+      if (/[(\[{“‘—―]$/.test(prevText) || /^[)\]},.;:!?%”’—―]/.test(nextText)) return { base: prevText, joiner: '' };
+      return { base: prevText, joiner: ' ' };
     }
 
     function finalizeBlockV2(b) {
       const text = b.text.trim();
-      const out = { type: b.type, text };
+      const out = { type: b.type, text, pdfY: Math.round((b.pdfY || 0) * 10000) / 10000 };
       if (b.type === 'paragraph') {
         const sents = splitParagraphIntoSentencesV2(text);
         out.sentences = sents;
         if (b.segments && b.segments.length > 1) {
+          // 跨頁接起來的段落：每一句記錄自己開頭所在的頁碼與頁面內位置（點擊該句時 PDF 跳到那裡）
           let cursor = 0;
-          out.sentencePages = sents.map((s) => {
-            const idx = text.indexOf(s, cursor);
+          const pagesOfSent = [];
+          const ysOfSent = [];
+          sents.forEach((sent) => {
+            const idx = text.indexOf(sent, cursor);
             const pos = idx === -1 ? cursor : idx;
-            cursor = pos + s.length;
+            cursor = pos + sent.length;
             const seg = b.segments.find((g) => pos >= g.start && pos < g.end) || b.segments[b.segments.length - 1];
-            return seg.page;
+            pagesOfSent.push(seg.page);
+            ysOfSent.push(Math.round((seg.y || 0) * 10000) / 10000);
           });
+          out.sentencePages = pagesOfSent;
+          out.sentenceYs = ysOfSent;
         }
       }
       return out;
@@ -1247,6 +1279,17 @@
     async function extractStructuredPagesFromPdfV2(pdfDoc, filterHeaderFooter = true, onProgress = null) {
       const numPages = pdfDoc.numPages;
       const pageLines = [];
+      let opListBudgetMs = 20000; // 為了讀取粗體資訊而額外解析頁面的總時間上限
+      const docSizeChars = {}; // 全文件「字級 → 字數」統計，用來找出內文的字級
+      let docChars = 0;
+      let docBoldChars = 0;
+      const tally = (l, it) => {
+        const key = Math.round(it.h * 2) / 2;
+        const n = it.str.trim().length;
+        l.hist[key] = (l.hist[key] || 0) + n;
+        l.chars += n;
+        if (it.bold) l.boldChars += n;
+      };
 
       // ---- 第 1 階段：逐頁取出文字行（座標、字高、左右邊界）----
       for (let p = 1; p <= numPages; p++) {
@@ -1255,13 +1298,39 @@
         const viewport = page.getViewport({ scale: 1 });
         const pageHeight = viewport.height || 800;
         const textContent = await page.getTextContent();
+        // getTextContent 之後 PDF.js 還沒載入字型物件（styles 只有泛稱 serif，沒有粗體資訊）；
+        // 要呼叫 getOperatorList() 之後才讀得到字型名稱與 bold。只有「這一頁有兩種以上字型」才可能有粗體區分，才值得多花這一步；
+        // 並限制總時間，超過就不再做（大文件匯入不會變慢），讀不到就視為非粗體。
+        if (opListBudgetMs > 0 && page.getOperatorList) {
+          const fontSet = new Set();
+          for (const it0 of textContent.items || []) if (it0.fontName) fontSet.add(it0.fontName);
+          if (fontSet.size >= 2) {
+            const t0 = Date.now();
+            try { await page.getOperatorList(); } catch {}
+            opListBudgetMs -= Date.now() - t0;
+          }
+        }
+        // 粗體判斷（只當輔助訊號）：字型名稱含 Bold／Black／Heavy…；拿不到字型資訊就一律視為非粗體
+        const boldCache = {};
+        const isBoldFont = (fn) => {
+          if (!fn) return false;
+          if (fn in boldCache) return boldCache[fn];
+          let bold = false;
+          try {
+            const f = page.commonObjs && page.commonObjs.has && page.commonObjs.has(fn) ? page.commonObjs.get(fn) : null;
+            const nm = `${(f && (f.name || f.fallbackName)) || ''} ${(textContent.styles && textContent.styles[fn] && textContent.styles[fn].fontFamily) || ''}`;
+            bold = !!(f && f.bold) || /bold|black|heavy|semibold|demi/i.test(nm);
+          } catch {}
+          boldCache[fn] = bold;
+          return bold;
+        };
         const items = [];
         for (const item of textContent.items || []) {
           const str = (item.str || '').replace(/\u0000/g, '');
           if (!str.trim()) continue;
           const tr = item.transform || [1, 0, 0, 1, 0, 0];
-          const fontH = Math.max(8, Math.hypot(tr[0], tr[1]) || item.height || 12);
-          items.push({ str, x: tr[4], y: tr[5], w: item.width || str.length * fontH * 0.5, h: fontH });
+          const fontH = pdfItemFontHeight(item);
+          items.push({ str, x: tr[4], y: tr[5], w: item.width || str.length * fontH * 0.5, h: fontH, bold: isBoldFont(item.fontName) });
         }
         sortTextItemsReadingOrder(items);
 
@@ -1279,48 +1348,108 @@
               !/^[\s.,;:!?%)\]」』）]/.test(it.str);
             last.text += (needSpace ? ' ' : '') + it.str;
             last.lastItem = it;
-            last.h = Math.max(last.h, it.h);
+            last.h = Math.max(last.h, it.h); // 行分組用（含最大的片段）；標題判斷改用下面算出來的「主要字級」
             last.xEnd = Math.max(last.xEnd, it.x + it.w);
+            tally(last, it);
           } else {
-            lines.push({ text: it.str.trim(), y: it.y, x: it.x, xEnd: it.x + it.w, h: it.h, lastItem: it });
+            const nl = { text: it.str.trim(), y: it.y, x: it.x, xEnd: it.x + it.w, h: it.h, lastItem: it, hist: {}, chars: 0, boldChars: 0 };
+            tally(nl, it);
+            lines.push(nl);
           }
         }
-        lines.forEach((l) => { l.yr = l.y / pageHeight; delete l.lastItem; });
-        pageLines.push({ pageNumber: p, lines });
+        lines.forEach((l) => {
+          l.yr = l.y / pageHeight;
+          // 這一行的「主要字級」＝佔最多字數的字級。破折號、引號這類標點常來自另一個字型、縮放偏大，
+          // 只有幾個字，不能代表整行（以前用「最大的那個片段」，一個 — 就會讓整行被當成標題）。
+          let best = null;
+          Object.keys(l.hist).forEach((k) => {
+            if (best === null || l.hist[k] > l.hist[best] || (l.hist[k] === l.hist[best] && Number(k) < Number(best))) best = k;
+          });
+          l.hMax = l.h;
+          if (best !== null) l.h = Number(best);
+          l.boldFrac = l.chars ? l.boldChars / l.chars : 0;
+          docSizeChars[best === null ? Math.round(l.h * 2) / 2 : best] = (docSizeChars[best === null ? Math.round(l.h * 2) / 2 : best] || 0) + l.chars;
+          docChars += l.chars;
+          docBoldChars += l.boldChars;
+          delete l.hist;
+          delete l.lastItem;
+        });
+        pageLines.push({ pageNumber: p, lines, pageWidth: viewport.width || 600, pageHeight });
       }
 
-      // ---- 第 2 階段：頁首／頁尾／頁碼偵測（跨頁重複 ＋ 頁碼樣式）----
+      // ---- 第 2 階段：頁首／頁尾／頁碼偵測 ----
+      //   規則 1：頁碼、網址這類「每頁都不一樣的雜訊」，出現在頁面上緣／下緣時一律移除。
+      //   規則 2：相同的文字（數字視為相同）在「多數頁面的相同位置」重複出現（頁首的日期與標題、頁尾版權宣告…），
+      //           只保留第一次出現的那一次，其餘頁面的重複內容刪除。
       if (filterHeaderFooter) {
         const sigOf = (t) => t.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().toLowerCase();
-        const zoneOf = (l) => (l.yr > 0.9 ? 'top' : l.yr < 0.09 ? 'bottom' : '');
-        const counts = {};
+        const inEdge = (l) => l.yr > 0.82 || l.yr < 0.14;
+        const isStampText = (t) =>
+          /^https?:\/\//i.test(t) ||
+          /^[-–—]?\s*\d+\s*[-–—]?$/.test(t) ||
+          /^\d+\s*\/\s*\d+$/.test(t) ||
+          /^(page|p\.?|第)\s*\d+(\s*(頁|页))?(\s*(of|\/)\s*\d+)?$/i.test(t);
         pageLines.forEach((pl) => {
-          const seen = new Set();
+          pl.lines = pl.lines.filter((l) => !(inEdge(l) && isStampText(l.text.trim())));
+        });
+
+        const clusters = [];
+        pageLines.forEach((pl) => {
           pl.lines.forEach((l) => {
-            const z = zoneOf(l);
-            if (!z) return;
-            const k = `${z}|${sigOf(l.text)}`;
-            if (!seen.has(k)) { seen.add(k); counts[k] = (counts[k] || 0) + 1; }
+            if (!inEdge(l)) return;
+            const sig = sigOf(l.text);
+            if (!sig) return;
+            const xr = l.x / (pl.pageWidth || 600);
+            let c = clusters.find((k) => k.sig === sig && Math.abs(k.yr - l.yr) <= 0.015 && Math.abs(k.xr - xr) <= 0.04);
+            if (!c) {
+              c = { sig, yr: l.yr, xr, pages: new Set(), first: pl.pageNumber };
+              clusters.push(c);
+            }
+            c.pages.add(pl.pageNumber);
+            l._c = c;
           });
         });
-        const minRepeat = Math.max(3, Math.ceil(numPages * 0.3));
-        pageLines.forEach((pl) => {
-          pl.lines = pl.lines.filter((l) => {
-            const z = zoneOf(l);
-            if (!z) return true;
-            const t = l.text.trim();
-            const nearEdge = l.yr > 0.94 || l.yr < 0.055;
-            const isStamp =
-              /^https?:\/\//i.test(t) ||
-              /^[-–—]?\s*\d+\s*[-–—]?$/.test(t) ||
-              /^\d+\s*\/\s*\d+$/.test(t) ||
-              /^(page|p\.?|第)\s*\d+(\s*(頁|页))?(\s*(of|\/)\s*\d+)?$/i.test(t);
-            if (nearEdge && isStamp) return false;
-            if (numPages >= 4 && counts[`${z}|${sigOf(t)}`] >= minRepeat) return false;
-            return true;
+        const need = numPages >= 3 ? Math.ceil(numPages * 0.5) : numPages;
+        if (numPages >= 2) {
+          pageLines.forEach((pl) => {
+            pl.lines = pl.lines.filter((l) => {
+              const c = l._c;
+              if (!c || c.pages.size < need) return true;
+              if (c.first === pl.pageNumber) {
+                l.hf = true; // 第一次出現：保留，但不與正文合併成同一段
+                return true;
+              }
+              return false;
+            });
           });
-        });
+        }
       }
+
+      // 內文字級＝全文件「字數加權」的中位數（標題字數少，不會把基準拉高）；粗體太普遍時不拿粗體當標題訊號
+      let bodyH = 12;
+      {
+        const sizes = Object.keys(docSizeChars).map(Number).sort((a, b) => a - b);
+        const total = sizes.reduce((acc, k) => acc + docSizeChars[k], 0);
+        let acc = 0;
+        for (const k of sizes) {
+          acc += docSizeChars[k];
+          if (acc >= total / 2) { bodyH = k; break; }
+        }
+      }
+      // 旁證 A：文件裡「看起來很大」或「整行粗體」的行只能是少數（標題本來就少）。比例太高，代表字級／粗體資訊不可靠
+      // （例如每行大小都被 OCR 調過），這時整個停用該訊號，一律當內文。
+      let docLineCount = 0;
+      let bigLineCount = 0;
+      let boldLineCount = 0;
+      pageLines.forEach((pl) => pl.lines.forEach((l) => {
+        if (!l.chars) return;
+        docLineCount++;
+        if (l.h >= bodyH * 1.2 && l.h - bodyH >= 1.5) bigLineCount++;
+        if (l.boldFrac >= 0.9) boldLineCount++;
+      }));
+      // （行數太少時統計沒有意義，不套用比例限制，只靠其他護欄）
+      const sizeSignalOk = docLineCount > 0 && (docLineCount < 12 || bigLineCount / docLineCount <= 0.2);
+      const boldIsRare = docLineCount > 0 && (docLineCount < 12 || boldLineCount / docLineCount <= 0.2) && docChars > 0 && docBoldChars / docChars <= 0.35;
 
       // ---- 第 3 階段：分段（含跨頁接續）----
       const pages = [];
@@ -1341,18 +1470,40 @@
         const leftMargin = lefts[Math.floor(lefts.length * 0.15)];
         const rightMargin = rights[Math.floor(rights.length * 0.9)];
         const fullW = Math.max(1, rightMargin - leftMargin);
+        // 這一頁正文「行與行」的典型間距：用它判斷什麼才是真正的段落間空行（雙倍行距的文件也不會每行都分段）
+        const gapList = [];
+        for (let i = 1; i < lines.length; i++) {
+          const g = lines[i - 1].y - lines[i].y;
+          if (g > medianH * 0.4 && g < medianH * 2.2) gapList.push(g);
+        }
+        gapList.sort((x, y) => x - y);
+        const pitch = gapList.length ? gapList[Math.floor(gapList.length / 2)] : medianH * 1.35;
+        const startsLikeContinuation = (t) => /^[a-z\u00df-\u00ff,;:.)\]}%、，。；：！？」』）”’\u4e00-\u9fff]/.test(t);
 
         const blocks = [];
         let cur = null;
         const startBlock = (type, line, text) => ({
-          type, text, startPage: pl.pageNumber,
+          type, text, startPage: pl.pageNumber, hf: !!line.hf,
+          pdfY: Math.min(1, Math.max(0, 1 - (line.y + line.h) / (pl.pageHeight || 800))), // 這一段第一行在原 PDF 頁面內的位置（0＝頁頂、1＝頁底）
           lastY: line.y, lastH: line.h, lastXEnd: line.xEnd, firstYr: line.yr, lastYr: line.yr
         });
 
         for (const line of lines) {
           const lineText = line.text.trim();
           totalCharCount += lineText.length;
-          const isHeading = line.h >= medianH * 1.2 && lineText.length < 130;
+          // 標題判斷：以「字級明顯比內文大」或「整行粗體」為主要依據；只靠行短、開頭符號、結尾沒句號都不算。
+          // 任何一項不確定就當一般內文（把標題當內文的影響，遠小於把內文當標題）。
+          const looksLikeShapeOk =
+            lineText.length < 130 &&
+            !/^[a-z,;:.)\]}%—–\-]/.test(lineText) &&       // 以小寫字母、逗號、破折號開頭＝句子中間
+            !/[-\u2010\u00ad,;、，；]$/.test(lineText);    // 以連字號、逗號結尾＝還沒講完
+          const prevUnfinished =
+            !!cur && cur.type === 'paragraph' && !cur.hf && !SENT_TERMINAL_RE.test(cur.text) && cur.lastY - line.y <= pitch * 1.5;
+          const bigFont = sizeSignalOk && line.h >= bodyH * 1.2 && line.h - bodyH >= 1.5;
+          // 旁證 B：標題和上一行之間要有明顯的間距（或是頁面第一行）；段落中間、行距正常的行一律不是標題
+          const spacedFromPrev = !cur || cur.type === 'heading' || cur.lastY - line.y > pitch * 1.25;
+          const boldLine = boldIsRare && line.boldFrac >= 0.9 && line.chars >= 3 && lineText.length <= 100 && line.h >= bodyH * 0.95;
+          const isHeading = looksLikeShapeOk && !prevUnfinished && spacedFromPrev && (bigFont || boldLine);
 
           if (!cur) {
             cur = startBlock(isHeading ? 'heading' : 'paragraph', line, lineText);
@@ -1362,11 +1513,16 @@
           const prevEndsTerminal = SENT_TERMINAL_RE.test(cur.text);
           const prevShort = cur.lastXEnd - leftMargin < fullW * 0.78;
           const indented = line.x - leftMargin > Math.max(line.h * 1.1, 8);
+          const blankLine = verticalGap > pitch * 1.5;
+          // 上一行還沒講完（沒有句號）、這一行接著講 → 就算中間隔了一點距離也接回去，不在句子或詞語中間斷開
+          const continues = !prevEndsTerminal && startsLikeContinuation(lineText) && verticalGap <= pitch * 3.2;
           const paragraphBreak =
             isHeading ||
             cur.type === 'heading' ||
-            verticalGap > Math.max(cur.lastH, line.h) * 1.72 ||
+            cur.hf ||
+            !!line.hf ||
             BLOCK_LIST_MARKER_RE.test(lineText) ||
+            (blankLine && !continues) ||
             (prevEndsTerminal && (prevShort || indented));
 
           if (paragraphBreak) {
@@ -1384,35 +1540,59 @@
         if (cur && cur.text.trim()) blocks.push(cur);
 
         // 跨頁接續：上一頁最後一段沒收尾、且落在頁面下方；本頁第一段在頁面上方、不是標題或條列
-        if (carry && blocks.length > 0) {
+        const firstBodyIdx = blocks.findIndex((bk) => !bk.hf);
+        if (carry && firstBodyIdx >= 0) {
           const prev = carry;
-          const first = blocks[0];
+          const first = blocks[firstBodyIdx];
+          // 換頁處接回同一段：上一頁最後一段沒收尾（或收尾後下一頁以小寫字母接續），且不是標題、條列、頁首頁尾
+          const prevOpen = !SENT_TERMINAL_RE.test(prev.text);
+          const lowerStart = /^[a-z]/.test(first.text);
           const canContinue =
-            prev.type === 'paragraph' && first.type === 'paragraph' &&
-            !SENT_TERMINAL_RE.test(prev.text) &&
+            prev.type === 'paragraph' && first.type === 'paragraph' && !prev.hf && !first.hf &&
             !BLOCK_LIST_MARKER_RE.test(first.text) &&
-            prev.lastYr < 0.35 && first.firstYr > 0.55;
+            prev.lastYr < 0.5 && first.firstYr > 0.5 &&
+            (prevOpen || (lowerStart && prev.lastYr < 0.3));
           if (canContinue) {
-            if (!prev.segments) prev.segments = [{ page: prev.startPage, start: 0, end: prev.text.length }];
+            if (!prev.segments) prev.segments = [{ page: prev.startPage, start: 0, end: prev.text.length, y: prev.pdfY }];
             const { base, joiner } = joinBlockText(prev.text, first.text);
             const segStart = base.length + joiner.length;
             prev.text = base + joiner + first.text;
             prev.segments[prev.segments.length - 1].end = Math.min(prev.segments[prev.segments.length - 1].end, base.length) || prev.segments[prev.segments.length - 1].end;
-            prev.segments.push({ page: pl.pageNumber, start: segStart, end: prev.text.length });
+            prev.segments.push({ page: pl.pageNumber, start: segStart, end: prev.text.length, y: first.pdfY });
             prev.lastYr = first.lastYr;
-            blocks.shift();
+            blocks.splice(firstBodyIdx, 1);
           }
         }
 
         const pageObj = { pageNumber: pl.pageNumber, blocks };
         pages.push(pageObj);
-        carry = blocks.length > 0 ? blocks[blocks.length - 1] : carry;
+        const lastBody = [...blocks].reverse().find((bk) => !bk.hf);
+        carry = lastBody || (blocks.length === 0 ? carry : null);
       }
 
       return {
         pages: pages.map((pg) => ({ pageNumber: pg.pageNumber, blocks: pg.blocks.map(finalizeBlockV2) })),
         totalCharCount
       };
+    }
+    // AI 辨識（OCR）回傳的區塊：AI 有時會逐行輸出、把一般內文標成標題。這裡只保留「看起來真的是標題」的，
+    // 並把行尾連字號斷開的單字、沒講完的句子接回同一段。
+    function sanitizeOcrBlocks(blocks) {
+      const out = [];
+      for (const b of blocks || []) {
+        const t = String((b && b.text) || '').replace(/\s+/g, ' ').trim();
+        if (!t) continue;
+        let type = b.type === 'heading' ? 'heading' : 'paragraph';
+        if (type === 'heading' && (t.length >= 100 || /^[a-z,;:.)\]}%—–\-]/.test(t) || /[-\u2010\u00ad,;、，；]$/.test(t))) type = 'paragraph';
+        const prev = out[out.length - 1];
+        if (prev && prev.type === 'paragraph' && type === 'paragraph' && !SENT_TERMINAL_RE.test(prev.text) && /^[a-z\u4e00-\u9fff,;:.)]/.test(t)) {
+          const { base, joiner } = joinBlockText(prev.text, t);
+          prev.text = base + joiner + t;
+          continue;
+        }
+        out.push({ type, text: t });
+      }
+      return out;
     }
     // ==== EXT-END ====
 
@@ -1434,10 +1614,7 @@
           if (!str.trim()) continue;
           const tx = item.transform ? item.transform[4] : 0;
           const ty = item.transform ? item.transform[5] : 0;
-          const fontH = Math.max(
-            8,
-            Math.hypot(item.transform?.[0] || 0, item.transform?.[1] || 0) || item.height || 12
-          );
+          const fontH = pdfItemFontHeight(item);
 
           if (filterHeaderFooter) {
             const isNearEdge = ty > pageHeight * 0.94 || ty < pageHeight * 0.055;
@@ -1505,7 +1682,8 @@
           const lineText = line.text.trim();
           if (!lineText) continue;
           totalCharCount += lineText.length;
-          const isHeading = line.h >= medianH * 1.2 && lineText.length < 130;
+          // 相容模式（新版轉換失敗時才會用到）：沒有可靠的依據，不自動判標題，一律當一般內文
+          const isHeading = false;
 
           if (!currentBlock) {
             currentBlock = {
@@ -1735,43 +1913,177 @@
       return { translation: mmText, posOrNote: '' };
     }
 
-    // 全面鎖定呼叫 gemini-3.8-flash（支援純文字、JSON Schema 與圖片 OCR inlineData）
-    async function callGeminiFlash({
-      geminiKey = '',
-      systemInstruction = '',
-      messages = [],
-      thinkingLevelObj = THINKING_LEVELS[2],
-      expectJson = false,
-      geminiJsonSchema = null
-    }) {
-      const cleanKey = (geminiKey || localStorage.getItem(LS_KEYS.API_KEY) || '').trim();
-      if (!cleanKey) {
-        throw new Error('請先點擊右上角「API 金鑰」設定您的 Google Gemini API Key');
+    // ==== AI-BEGIN（AI 服務設定與呼叫：Gemini / OpenAI / Anthropic）====
+    // 金鑰只存在使用者自己的裝置（localStorage / IndexedDB），而且只會送到「所選 AI 服務」自己的網域。
+    const AI_PROVIDER_ORDER = ['gemini', 'openai', 'anthropic'];
+    const AI_PROVIDERS = {
+      gemini: {
+        id: 'gemini',
+        name: 'Google Gemini',
+        short: 'Gemini',
+        keyUrl: 'https://aistudio.google.com/apikey',
+        keyLabel: '前往 Google AI Studio 取得金鑰',
+        keyPlaceholder: '貼上以 AIza 開頭的金鑰',
+        models: [
+          { id: LOCKED_GEMINI_MODEL, tier: '原本使用的模型' },
+          { id: 'gemini-2.5-flash-lite', tier: '最便宜' },
+          { id: 'gemini-2.5-flash', tier: '便宜、速度快' },
+          { id: 'gemini-2.5-pro', tier: '較貴、能力最強' }
+        ]
+      },
+      openai: {
+        id: 'openai',
+        name: 'OpenAI（ChatGPT）',
+        short: 'OpenAI',
+        keyUrl: 'https://platform.openai.com/api-keys',
+        keyLabel: '前往 OpenAI 取得金鑰',
+        keyPlaceholder: '貼上以 sk- 開頭的金鑰',
+        models: [
+          { id: 'gpt-4o-mini', tier: '便宜' },
+          { id: 'gpt-4.1-mini', tier: '便宜、較新' },
+          { id: 'gpt-4o', tier: '均衡' },
+          { id: 'gpt-4.1', tier: '較貴、能力較強' }
+        ]
+      },
+      anthropic: {
+        id: 'anthropic',
+        name: 'Anthropic（Claude）',
+        short: 'Claude',
+        keyUrl: 'https://console.anthropic.com/settings/keys',
+        keyLabel: '前往 Anthropic 取得金鑰',
+        keyPlaceholder: '貼上以 sk-ant- 開頭的金鑰',
+        models: [
+          { id: 'claude-haiku-5-5', tier: '便宜、速度快' },
+          { id: 'claude-sonnet-5-5', tier: '均衡' },
+          { id: 'claude-opus-5-5', tier: '較貴、能力最強' }
+        ]
       }
+    };
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${LOCKED_GEMINI_MODEL}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+    // 目前的服務與各服務選用的模型（沒有儲存過 → 預設 Gemini ＋ 原本使用的模型，舊使用者不必重新設定）
+    function loadAIConfig() {
+      const saved = readLSJson(LS_KEYS.AI_CONFIG, null) || {};
+      const models = {
+        gemini: LOCKED_GEMINI_MODEL,
+        openai: AI_PROVIDERS.openai.models[0].id,
+        anthropic: AI_PROVIDERS.anthropic.models[0].id,
+        ...(saved.models && typeof saved.models === 'object' ? saved.models : {})
+      };
+      const provider = AI_PROVIDERS[saved.provider] ? saved.provider : 'gemini';
+      return { provider, models };
+    }
 
+    function saveAIConfig(cfg) {
+      writeLSJson(LS_KEYS.AI_CONFIG, { provider: cfg.provider, models: cfg.models });
+    }
+
+    // Gemini 的金鑰沿用原本的儲存位置（舊使用者自動保留）；其他服務存在另一個欄位
+    function getAIKey(providerId) {
+      if (providerId === 'gemini') {
+        try { return (window.localStorage.getItem(LS_KEYS.API_KEY) || '').trim(); } catch { return ''; }
+      }
+      const all = readLSJson(LS_KEYS.AI_KEYS, {}) || {};
+      return String(all[providerId] || '').trim();
+    }
+
+    function setAIKey(providerId, key) {
+      const clean = String(key || '').trim();
+      if (providerId === 'gemini') {
+        try { window.localStorage.setItem(LS_KEYS.API_KEY, clean); } catch {}
+        return;
+      }
+      const all = readLSJson(LS_KEYS.AI_KEYS, {}) || {};
+      writeLSJson(LS_KEYS.AI_KEYS, { ...all, [providerId]: clean });
+    }
+
+    function maskAIKey(key) {
+      const k = String(key || '');
+      return k.length > 8 ? `${'•'.repeat(8)}${k.slice(-4)}` : k ? '•'.repeat(k.length) : '';
+    }
+
+    class AIError extends Error {
+      constructor(message, code, apiMessage) {
+        super(message);
+        this.name = 'AIError';
+        this.code = code || 'error';
+        this.apiMessage = apiMessage || '';
+      }
+    }
+
+    function sanitizeAIKey(raw) {
+      return String(raw || '').trim().replace(/^["']+|["']+$/g, '').replace(/^Bearer\s+/i, '').trim();
+    }
+
+    // 把各家 API 的錯誤，統一成使用者看得懂的中文說明
+    function aiHttpErrorMessage(prov, status, apiMessage, model) {
+      const msg = String(apiMessage || '');
+      if (
+        status === 401 || status === 403 ||
+        /api key not valid|invalid api key|incorrect api key|invalid x-api-key|api[_ ]key.*(invalid|expired)|authentication|unauthorized|permission[_ ]denied/i.test(msg)
+      ) {
+        return `API 金鑰無效或沒有使用權限：請確認這把金鑰是 ${prov.name} 的、沒有多複製到空白，且沒有被停用`;
+      }
+      if (status === 404 || /model[^.]*(not found|does not exist|is not supported|not available)|not_found_error|model_not_found|is not found for api/i.test(msg)) {
+        return `找不到此模型「${model}」：請確認名稱拼寫正確，或改選清單中的模型`;
+      }
+      if (status === 402 || /insufficient_quota|billing|exceeded your current quota|credit balance/i.test(msg)) {
+        return `${prov.short} 帳戶額度不足或尚未設定付款方式，請到服務網站檢查帳戶`;
+      }
+      if (status === 429 || /quota|rate.?limit|resource_exhausted|overloaded/i.test(msg)) {
+        return `${prov.short} 目前請求太頻繁或額度已用完，請稍後再試`;
+      }
+      if (status >= 500) return `${prov.short} 服務暫時無法使用（${status}），請稍後再試`;
+      return `${prov.short} 回傳錯誤（${status}）：${msg || '未知原因'}`;
+    }
+
+    // 模型常會把 JSON 包在 ```json 程式碼框或前後加說明；取出真正的 JSON 部分
+    function extractJsonText(text) {
+      let t = String(text || '').trim();
+      t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+      const a = t.indexOf('{');
+      const b = t.lastIndexOf('}');
+      return a >= 0 && b > a ? t.slice(a, b + 1) : t;
+    }
+
+    async function aiFetch(prov, url, init, model) {
+      let res;
+      try {
+        res = await fetch(url, init);
+      } catch {
+        let host = prov.short;
+        try { host = new URL(url).host; } catch {}
+        throw new AIError(`無法連線到 ${prov.short}：請檢查網路連線；若網路正常，可能是公司／學校網路或瀏覽器擴充功能擋住了 ${host}`, 'network');
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const apiMsg = (data && data.error && (data.error.message || data.error.type)) || (data && data.message) || '';
+        throw new AIError(aiHttpErrorMessage(prov, res.status, apiMsg, model), `http_${res.status}`, apiMsg);
+      }
+      return data;
+    }
+
+    function aiJsonHint(jsonSchema) {
+      return jsonSchema
+        ? `\n\n【輸出格式】請只回傳一個 JSON 物件（不要 Markdown 程式碼框、不要多餘說明），欄位結構如下：\n${JSON.stringify(jsonSchema)}`
+        : '\n\n請只回傳一個 JSON 物件，不要加任何其他文字。';
+    }
+
+    async function callGeminiAPI({ key, model, systemInstruction, messages, thinkingLevelObj, expectJson, jsonSchema }) {
+      const prov = AI_PROVIDERS.gemini;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
       const contents = messages.map((m) => {
         const parts = [];
-        if (m.inlineData) {
-          parts.push({ inlineData: m.inlineData });
-        }
-        if (m.text) {
-          parts.push({ text: m.text });
-        }
-        return {
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts
-        };
+        if (m.inlineData) parts.push({ inlineData: m.inlineData });
+        if (m.text) parts.push({ text: m.text });
+        return { role: m.role === 'assistant' ? 'model' : 'user', parts };
       });
-
-      const buildPayload = (includeThinking) => {
+      const build = (includeThinking) => {
         const generationConfig = {};
         if (expectJson) {
           generationConfig.responseMimeType = 'application/json';
-          if (geminiJsonSchema) generationConfig.responseSchema = geminiJsonSchema;
+          if (jsonSchema) generationConfig.responseSchema = jsonSchema;
         }
-        if (includeThinking && typeof thinkingLevelObj?.geminiBudget === 'number') {
+        if (includeThinking && thinkingLevelObj && typeof thinkingLevelObj.geminiBudget === 'number') {
           generationConfig.thinkingConfig = { thinkingBudget: thinkingLevelObj.geminiBudget };
         }
         return {
@@ -1780,35 +2092,143 @@
           ...(Object.keys(generationConfig).length > 0 ? { generationConfig } : {})
         };
       };
-
-      let res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload(true))
-      });
-
-      if (res.status === 400) {
-        const errCheck = await res.clone().json().catch(() => ({}));
-        if (/thinking/i.test(errCheck?.error?.message || '')) {
-          res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildPayload(false))
-          });
-        }
+      const send = (payload) =>
+        aiFetch(prov, url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(payload) }, model);
+      let data;
+      try {
+        data = await send(build(true));
+      } catch (e) {
+        if (e instanceof AIError && e.code === 'http_400' && /thinking/i.test(e.apiMessage)) data = await send(build(false));
+        else throw e;
       }
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error?.message || `Gemini 連線錯誤 (${res.status})`);
-
-      const parts = data?.candidates?.[0]?.content?.parts || [];
-      let thoughtText = '';
-      let answerText = '';
+      const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+      let thought = '';
+      let answer = '';
       for (const p of parts) {
-        if (p.thought) thoughtText += p.text || '';
-        else answerText += p.text || '';
+        if (p.thought) thought += p.text || '';
+        else answer += p.text || '';
       }
-      return { text: answerText.trim(), thought: thoughtText.trim() };
+      if (!answer.trim() && !parts.length) throw new AIError('AI 沒有產生內容（可能被安全機制擋下，請換個說法或換個模型再試）', 'empty');
+      return { text: answer.trim(), thought: thought.trim() };
+    }
+
+    async function callOpenAIAPI({ key, model, systemInstruction, messages, expectJson, jsonSchema }) {
+      const prov = AI_PROVIDERS.openai;
+      const sys = `${systemInstruction || ''}${expectJson ? aiJsonHint(jsonSchema) : ''}`.trim();
+      const msgs = [];
+      if (sys) msgs.push({ role: 'system', content: sys });
+      messages.forEach((m) => {
+        const role = m.role === 'assistant' ? 'assistant' : 'user';
+        if (m.inlineData && role === 'user') {
+          const content = [{ type: 'image_url', image_url: { url: `data:${m.inlineData.mimeType};base64,${m.inlineData.data}` } }];
+          if (m.text) content.push({ type: 'text', text: m.text });
+          msgs.push({ role, content });
+        } else {
+          msgs.push({ role, content: m.text || '' });
+        }
+      });
+      const body = { model, messages: msgs, ...(expectJson ? { response_format: { type: 'json_object' } } : {}) };
+      const data = await aiFetch(
+        prov,
+        'https://api.openai.com/v1/chat/completions',
+        { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, body: JSON.stringify(body) },
+        model
+      );
+      const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (!text) throw new AIError('AI 沒有產生內容，請換個說法或換個模型再試', 'empty');
+      return { text: String(text).trim(), thought: '' };
+    }
+
+    async function callAnthropicAPI({ key, model, systemInstruction, messages, expectJson, jsonSchema }) {
+      const prov = AI_PROVIDERS.anthropic;
+      const sys = `${systemInstruction || ''}${expectJson ? aiJsonHint(jsonSchema) : ''}`.trim();
+      // Claude 的對話必須由使用者開頭，且角色交替：捨棄開頭的 AI 訊息、合併連續同角色的訊息
+      const msgs = [];
+      messages.forEach((m) => {
+        const role = m.role === 'assistant' ? 'assistant' : 'user';
+        if (msgs.length === 0 && role === 'assistant') return;
+        const blocks = [];
+        if (m.inlineData && role === 'user') {
+          blocks.push({ type: 'image', source: { type: 'base64', media_type: m.inlineData.mimeType, data: m.inlineData.data } });
+        }
+        if (m.text) blocks.push({ type: 'text', text: m.text });
+        if (!blocks.length) return;
+        const last = msgs[msgs.length - 1];
+        if (last && last.role === role) last.content.push(...blocks);
+        else msgs.push({ role, content: blocks });
+      });
+      const body = { model, max_tokens: 4096, messages: msgs, ...(sys ? { system: sys } : {}) };
+      const data = await aiFetch(
+        prov,
+        'https://api.anthropic.com/v1/messages',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify(body)
+        },
+        model
+      );
+      const text = ((data && data.content) || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+      if (!text.trim()) throw new AIError('AI 沒有產生內容，請換個說法或換個模型再試', 'empty');
+      return { text: text.trim(), thought: '' };
+    }
+
+    // 統一入口：依使用者選擇的服務與模型呼叫對應的 API。override 用於「測試連線」（不必先儲存）
+    async function callAI({ override = null, systemInstruction = '', messages = [], thinkingLevelObj = THINKING_LEVELS[2], expectJson = false, geminiJsonSchema = null }) {
+      const cfg = loadAIConfig();
+      const providerId = (override && override.provider) || cfg.provider;
+      const prov = AI_PROVIDERS[providerId];
+      const model = String(override && override.model !== undefined ? override.model : cfg.models[providerId] || '').trim();
+      const key = sanitizeAIKey(override && override.key !== undefined ? override.key : getAIKey(providerId));
+      if (!key) throw new AIError(`請先到「AI 設定」輸入 ${prov.name} 的 API 金鑰`, 'no_key');
+      if (/[^\x21-\x7e]/.test(key)) throw new AIError('API 金鑰格式不正確（含有空白、中文或特殊符號），請重新複製貼上', 'bad_key');
+      if (!model) throw new AIError('請先在「AI 設定」選擇或輸入模型名稱', 'no_model');
+      const params = { key, model, systemInstruction, messages, thinkingLevelObj, expectJson, jsonSchema: geminiJsonSchema };
+      const out =
+        providerId === 'openai' ? await callOpenAIAPI(params) : providerId === 'anthropic' ? await callAnthropicAPI(params) : await callGeminiAPI(params);
+      return { text: expectJson ? extractJsonText(out.text) : out.text, thought: out.thought || '' };
+    }
+    // ==== AI-END ====
+
+    // 在指定畫布上畫一筆手寫／標記筆跡（座標為 0~1 的頁面比例）
+    function paintStroke(ctx, s, W, H) {
+      if (!s || !s.points || s.points.length < 2) return;
+      const cObj = MARKER_COLORS.find((c) => c.id === s.colorId) || MARKER_COLORS[0];
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = cObj.hex;
+      if (s.type === 'marker') {
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(14, W * 0.024);
+      } else {
+        ctx.globalAlpha = 0.92;
+        ctx.lineWidth = Math.max(2.5, W * 0.0038);
+      }
+      // 只有一個點（輕點、剛下筆還沒移動）時，零長度的線段不會被畫出來，改畫圓點
+      const p0 = s.points[0];
+      if (s.points.every((pt) => pt.x === p0.x && pt.y === p0.y)) {
+        ctx.fillStyle = cObj.hex;
+        ctx.beginPath();
+        ctx.arc(p0.x * W, p0.y * H, ctx.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+      ctx.beginPath();
+      s.points.forEach((pt, idx) => {
+        const px = pt.x * W;
+        const py = pt.y * H;
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.restore();
     }
 
     // =========================================================================
@@ -1818,6 +2238,8 @@
       pdfDoc,
       pageNumber,
       pdfZoom,
+      pageBase,
+      fingerDraw,
       pdfTool,
       drawMode,
       activeBrushColor,
@@ -1835,14 +2257,31 @@
       const wrapperRef = useRef(null);
       const pdfCanvasRef = useRef(null);
       const overlayCanvasRef = useRef(null);
+      const cacheCanvasRef = useRef(null); // 已完成筆跡的快取層：書寫時只重畫「正在寫的那一筆」
+      const cacheInkRef = useRef(false);
       const drawingStrokeRef = useRef(null);
       const draggingStickyRef = useRef(null);
+      const activePointerRef = useRef(null); // 目前正在書寫的指標（只認第一個，其餘不干擾）
+      const panRef = useRef(null);           // 手指捲動（書寫模式下由程式接手）
+      const momentumRef = useRef(0);
+      const paintRafRef = useRef(0);
+      const propsRef = useRef({});
+      propsRef.current = { pdfTool, drawMode, activeBrushColor, fingerDraw, pageNumber, onCommitAnnotation, onEraseAtPoint, scrollRootRef, pageAnnotations };
 
+      // 頁面尺寸：由整份文件預先量好的原始尺寸換算，載入前後大小一致，捲動位置才不會跳
+      const baseW = pageBase ? pageBase.w : 595;
+      const baseH = pageBase ? pageBase.h : 842;
       const [isNearViewport, setIsNearViewport] = useState(pageNumber <= 3);
-      const [pageSize, setPageSize] = useState({ width: Math.round(595 * pdfZoom), height: Math.round(842 * pdfZoom) });
+      const [pageSize, setPageSize] = useState({ width: Math.floor(baseW * pdfZoom), height: Math.floor(baseH * pdfZoom) });
       const [editingStickyId, setEditingStickyId] = useState(null);
 
-      // 偵測頁面進入視野（懶載入畫布 ＋ 自動更新當前頁碼）
+      useEffect(() => {
+        const w = Math.floor(baseW * pdfZoom);
+        const h = Math.floor(baseH * pdfZoom);
+        setPageSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+      }, [baseW, baseH, pdfZoom]);
+
+      // 偵測頁面進入／離開視野：進入時才渲染，離開太遠就釋放畫布（長文件不會吃光平板記憶體）
       useEffect(() => {
         const el = wrapperRef.current;
         if (!el) return;
@@ -1850,11 +2289,9 @@
 
         const lazyObs = new IntersectionObserver(
           (entries) => {
-            entries.forEach((entry) => {
-              if (entry.isIntersecting) setIsNearViewport(true);
-            });
+            entries.forEach((entry) => setIsNearViewport(entry.isIntersecting));
           },
-          { root: rootEl, rootMargin: '800px 0px' }
+          { root: rootEl, rootMargin: '1200px 0px' }
         );
 
         const activePageObs = new IntersectionObserver(
@@ -1876,61 +2313,48 @@
         };
       }, [pageNumber, onPageVisible, scrollRootRef]);
 
-      // 繪製手寫與直線標註覆蓋層
-      const redrawStrokes = useCallback(() => {
+      // 繪製覆蓋層：已完成的筆跡與同步底色放在快取層，書寫中每一幀只疊上「正在寫的那一筆」
+      const paintOverlay = useCallback((rebuild) => {
         const canvas = overlayCanvasRef.current;
-        if (!canvas) return;
+        if (!canvas || !canvas.width) return;
         const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // 「同步重點至 PDF」的底色（先畫，讓手寫線條蓋在上面）
-        pageAnnotations
-          .filter((a) => a.type === 'hlsync')
-          .forEach((a) => {
-            const hc = MARKER_COLORS.find((c) => c.id === a.colorId) || MARKER_COLORS[0];
-            ctx.save();
-            ctx.globalAlpha = 0.36;
-            ctx.fillStyle = hc.hex;
-            (a.rects || []).forEach((r) => {
-              ctx.fillRect(r.x * canvas.width, r.y * canvas.height, r.w * canvas.width, r.h * canvas.height);
-            });
-            ctx.restore();
-          });
-
-        const strokes = pageAnnotations.filter((a) => a.type === 'pen' || a.type === 'marker');
-
-        const drawOne = (s) => {
-          if (!s.points || s.points.length < 2) return;
-          const cObj = MARKER_COLORS.find((c) => c.id === s.colorId) || MARKER_COLORS[0];
-          ctx.save();
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.strokeStyle = cObj.hex;
-          if (s.type === 'marker') {
-            ctx.globalAlpha = 0.35;
-            ctx.lineWidth = Math.max(14, canvas.width * 0.024);
-          } else {
-            ctx.globalAlpha = 0.92;
-            ctx.lineWidth = Math.max(2.5, canvas.width * 0.0038);
+        const W = canvas.width;
+        const H = canvas.height;
+        let cache = cacheCanvasRef.current;
+        if (rebuild || !cache || cache.width !== W || cache.height !== H) {
+          const anns = propsRef.current.pageAnnotations || [];
+          const syncs = anns.filter((x) => x.type === 'hlsync');
+          const strokes = anns.filter((x) => (x.type === 'pen' || x.type === 'marker') && x.points && x.points.length >= 2);
+          cacheInkRef.current = syncs.length > 0 || strokes.length > 0;
+          if (!cache) {
+            cache = document.createElement('canvas');
+            cacheCanvasRef.current = cache;
           }
-          ctx.beginPath();
-          s.points.forEach((pt, idx) => {
-            const px = pt.x * canvas.width;
-            const py = pt.y * canvas.height;
-            if (idx === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
+          if (cache.width !== W || cache.height !== H) {
+            cache.width = W;
+            cache.height = H;
+          }
+          const cctx = cache.getContext('2d');
+          cctx.clearRect(0, 0, W, H);
+          syncs.forEach((a) => {
+            const hc = MARKER_COLORS.find((c) => c.id === a.colorId) || MARKER_COLORS[0];
+            cctx.save();
+            cctx.globalAlpha = 0.36;
+            cctx.fillStyle = hc.hex;
+            (a.rects || []).forEach((r) => cctx.fillRect(r.x * W, r.y * H, r.w * W, r.h * H));
+            cctx.restore();
           });
-          ctx.stroke();
-          ctx.restore();
-        };
+          strokes.forEach((st) => paintStroke(cctx, st, W, H));
+        }
+        ctx.clearRect(0, 0, W, H);
+        if (cacheInkRef.current) ctx.drawImage(cache, 0, 0);
+        if (drawingStrokeRef.current) paintStroke(ctx, drawingStrokeRef.current, W, H);
+      }, []);
 
-        strokes.forEach(drawOne);
-        if (drawingStrokeRef.current) drawOne(drawingStrokeRef.current);
-      }, [pageAnnotations]);
-
-      // 渲染 PDF 底層畫布
+      // 渲染 PDF 底層畫布：只在「文件／頁碼／縮放／是否在視野」改變時才重畫。
+      // 先畫在離屏畫布，完成後一次貼上，不會出現空白閃一下；標註變動完全不會觸發這裡。
       useEffect(() => {
-        if (!pdfDoc || !isNearViewport || !pdfCanvasRef.current || !overlayCanvasRef.current) return;
+        if (!pdfDoc || !isNearViewport || !pdfCanvasRef.current || !overlayCanvasRef.current) return undefined;
         let renderTask = null;
         let cancelled = false;
 
@@ -1938,31 +2362,33 @@
           try {
             const page = await pdfDoc.getPage(pageNumber);
             if (cancelled) return;
-            const dpr = window.devicePixelRatio || 1;
+            let dpr = Math.min(window.devicePixelRatio || 1, 2);
             const viewport = page.getViewport({ scale: pdfZoom });
             const w = Math.floor(viewport.width);
             const h = Math.floor(viewport.height);
-            setPageSize({ width: w, height: h });
+            while (dpr > 1 && w * h * dpr * dpr > 12e6) dpr = Math.max(1, dpr - 0.25); // 避開平板畫布像素上限
+
+            const off = document.createElement('canvas');
+            off.width = Math.floor(w * dpr);
+            off.height = Math.floor(h * dpr);
+            const octx = off.getContext('2d');
+            octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            renderTask = page.render({ canvasContext: octx, viewport });
+            await renderTask.promise;
+            if (cancelled) return;
 
             const canvas = pdfCanvasRef.current;
             const overlay = overlayCanvasRef.current;
             if (!canvas || !overlay) return;
-
-            canvas.width = Math.floor(w * dpr);
-            canvas.height = Math.floor(h * dpr);
-            canvas.style.width = `${w}px`;
-            canvas.style.height = `${h}px`;
-
-            overlay.width = Math.floor(w * dpr);
-            overlay.height = Math.floor(h * dpr);
-            overlay.style.width = `${w}px`;
-            overlay.style.height = `${h}px`;
-
-            const ctx = canvas.getContext('2d');
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            renderTask = page.render({ canvasContext: ctx, viewport });
-            await renderTask.promise;
-            if (!cancelled) redrawStrokes();
+            canvas.width = off.width;
+            canvas.height = off.height;
+            canvas.getContext('2d').drawImage(off, 0, 0);
+            if (overlay.width !== off.width || overlay.height !== off.height) {
+              overlay.width = off.width;
+              overlay.height = off.height;
+            }
+            if (!pageBase) setPageSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+            paintOverlay(true);
           } catch {}
         })();
 
@@ -1970,11 +2396,12 @@
           cancelled = true;
           if (renderTask?.cancel) renderTask.cancel();
         };
-      }, [pdfDoc, pageNumber, pdfZoom, isNearViewport, redrawStrokes]);
+      }, [pdfDoc, pageNumber, pdfZoom, isNearViewport, paintOverlay, pageBase]);
 
+      // 標註內容變動：只重畫覆蓋層
       useEffect(() => {
-        redrawStrokes();
-      }, [redrawStrokes]);
+        paintOverlay(true);
+      }, [pageAnnotations, paintOverlay]);
 
       const getNormPoint = (e) => {
         const el = wrapperRef.current;
@@ -1986,56 +2413,208 @@
         };
       };
 
-      const handlePointerDown = (e) => {
-        if (e.target.closest('.sticky-note-card')) return;
-        const pt = getNormPoint(e);
-        if (pdfSpotlightRuler && pdfTool === 'cursor') {
-          setRulerYRatio(pt.y);
-        }
-        if (pdfTool === 'cursor') return;
-        e.preventDefault();
-        if (e.currentTarget.setPointerCapture) {
-          try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-        }
+      // 書寫／橡皮擦／便利貼：原生 Pointer Events（可取得觸控筆與一筆中的所有取樣點）。
+      //   觸控筆、滑鼠 → 書寫；手指 → 捲動（可在工具列開啟「手指也能書寫」）；大面積接觸（手掌）一律忽略。
+      useEffect(() => {
+        const canvas = overlayCanvasRef.current;
+        if (!canvas || !isNearViewport) return undefined;
 
-        if (pdfTool === 'note') {
+        const norm = (e) => {
+          const r = canvas.getBoundingClientRect();
+          return {
+            x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+            y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+          };
+        };
+        const placeSticky = (pt) => {
+          const P = propsRef.current;
           const newSticky = {
             id: `sticky-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-            page: pageNumber,
+            page: P.pageNumber,
             type: 'note',
             x: Math.min(0.72, Math.max(0.03, pt.x)),
             y: Math.min(0.82, Math.max(0.03, pt.y)),
-            colorId: activeBrushColor,
+            colorId: P.activeBrushColor,
             text: ''
           };
-          onCommitAnnotation(newSticky, true);
+          P.onCommitAnnotation(newSticky, true);
           setEditingStickyId(newSticky.id);
-          return;
-        }
+        };
+        const schedulePaint = () => {
+          if (paintRafRef.current) return;
+          paintRafRef.current = requestAnimationFrame(() => {
+            paintRafRef.current = 0;
+            paintOverlay(false);
+          });
+        };
+        const stopMomentum = () => {
+          if (momentumRef.current) cancelAnimationFrame(momentumRef.current);
+          momentumRef.current = 0;
+        };
+        const startMomentum = (root, vx, vy) => {
+          let last = performance.now();
+          const step = (now) => {
+            const dt = Math.min(32, now - last);
+            last = now;
+            root.scrollLeft -= vx * dt;
+            root.scrollTop -= vy * dt;
+            vx *= 0.95;
+            vy *= 0.95;
+            momentumRef.current = Math.abs(vx) + Math.abs(vy) > 0.02 ? requestAnimationFrame(step) : 0;
+          };
+          momentumRef.current = requestAnimationFrame(step);
+        };
 
-        if (pdfTool === 'eraser') {
-          onEraseAtPoint(pageNumber, pt);
-          return;
-        }
-
-        if (pdfTool === 'pen' || pdfTool === 'marker') {
-          const isStraight = drawMode === 'line' || e.shiftKey;
+        const onDown = (e) => {
+          const P = propsRef.current;
+          if (P.pdfTool === 'cursor') return;
+          if (e.pointerType === 'mouse' && e.button !== 0) return;
+          if (e.pointerType === 'touch') {
+            if (activePointerRef.current && activePointerRef.current.type === 'pen') return; // 筆在寫字時，手掌／手指一律不理
+            if (e.width > 45 && e.height > 45) return; // 大面積接觸＝手掌
+          }
+          const writes = e.pointerType !== 'touch' || P.fingerDraw;
+          if (!writes) {
+            // 手指：捲動。書寫模式下 touch-action 是 none，所以由這裡手動捲動容器
+            const root = P.scrollRootRef && P.scrollRootRef.current;
+            if (!root || panRef.current || activePointerRef.current) return;
+            stopMomentum();
+            try { canvas.setPointerCapture(e.pointerId); } catch {}
+            const now = performance.now();
+            panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: now, t0: now, vx: 0, vy: 0, root };
+            return;
+          }
+          if (activePointerRef.current) return;
+          e.preventDefault();
+          try { canvas.setPointerCapture(e.pointerId); } catch {}
+          activePointerRef.current = { id: e.pointerId, type: e.pointerType };
+          const pt = norm(e);
+          if (P.pdfTool === 'note') {
+            placeSticky(pt);
+            activePointerRef.current = null;
+            return;
+          }
+          if (P.pdfTool === 'eraser') {
+            P.onEraseAtPoint(P.pageNumber, pt);
+            return;
+          }
           drawingStrokeRef.current = {
             id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-            page: pageNumber,
-            type: pdfTool,
-            colorId: activeBrushColor,
-            isStraight,
+            page: P.pageNumber,
+            type: P.pdfTool,
+            colorId: P.activeBrushColor,
+            isStraight: P.drawMode === 'line' || e.shiftKey,
             points: [pt, pt]
           };
-          redrawStrokes();
+          paintOverlay(false); // 筆尖一接觸就立刻看到墨點，不等下一幀
+        };
+
+        const onMove = (e) => {
+          const pan = panRef.current;
+          if (pan && pan.id === e.pointerId) {
+            const now = performance.now();
+            const dx = e.clientX - pan.x;
+            const dy = e.clientY - pan.y;
+            pan.root.scrollLeft -= dx;
+            pan.root.scrollTop -= dy;
+            const dt = Math.max(1, now - pan.t);
+            pan.vx = 0.7 * pan.vx + 0.3 * (dx / dt);
+            pan.vy = 0.7 * pan.vy + 0.3 * (dy / dt);
+            pan.x = e.clientX;
+            pan.y = e.clientY;
+            pan.t = now;
+            return;
+          }
+          const act = activePointerRef.current;
+          if (!act || act.id !== e.pointerId) return;
+          const P = propsRef.current;
+          const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null; // 觸控筆一幀內的全部取樣點，線條才不會斷斷續續
+          const list = evs && evs.length ? evs : [e];
+          if (P.pdfTool === 'eraser') {
+            list.forEach((ev) => P.onEraseAtPoint(P.pageNumber, norm(ev)));
+            return;
+          }
+          const stroke = drawingStrokeRef.current;
+          if (!stroke) return;
+          if (stroke.isStraight || e.shiftKey) {
+            const startPt = stroke.points[0];
+            const endPt = norm(e);
+            if (e.shiftKey) {
+              if (Math.abs(endPt.x - startPt.x) > Math.abs(endPt.y - startPt.y)) endPt.y = startPt.y;
+              else endPt.x = startPt.x;
+            }
+            stroke.points = [startPt, endPt];
+          } else {
+            list.forEach((ev) => stroke.points.push(norm(ev)));
+          }
+          schedulePaint();
+        };
+
+        const finish = (e) => {
+          const pan = panRef.current;
+          if (pan && pan.id === e.pointerId) {
+            panRef.current = null;
+            try { canvas.releasePointerCapture(e.pointerId); } catch {}
+            const moved = Math.hypot(e.clientX - pan.sx, e.clientY - pan.sy);
+            if (propsRef.current.pdfTool === 'note' && e.type === 'pointerup' && moved < 8 && performance.now() - pan.t0 < 500) {
+              placeSticky(norm(e)); // 手指輕點＝放置便利貼；拖動＝捲動
+            } else if (moved > 8 && performance.now() - pan.t < 80) {
+              startMomentum(pan.root, pan.vx, pan.vy);
+            }
+            return;
+          }
+          const act = activePointerRef.current;
+          if (!act || act.id !== e.pointerId) return;
+          activePointerRef.current = null;
+          try { canvas.releasePointerCapture(e.pointerId); } catch {}
+          const finished = drawingStrokeRef.current;
+          drawingStrokeRef.current = null;
+          if (finished && finished.points.length >= 2) {
+            // 先把完成的筆跡畫進快取層，再通知上層：筆跡不會在「狀態更新 → 重繪」之間消失一幀
+            let cache = cacheCanvasRef.current;
+            if (!cache || cache.width !== canvas.width || cache.height !== canvas.height) {
+              paintOverlay(true);
+              cache = cacheCanvasRef.current;
+            }
+            if (cache) {
+              paintStroke(cache.getContext('2d'), finished, cache.width, cache.height);
+              cacheInkRef.current = true;
+            }
+            paintOverlay(false);
+            propsRef.current.onCommitAnnotation(finished, false);
+          } else {
+            paintOverlay(false);
+          }
+        };
+
+        canvas.addEventListener('pointerdown', onDown, { passive: false });
+        canvas.addEventListener('pointermove', onMove);
+        canvas.addEventListener('pointerup', finish);
+        canvas.addEventListener('pointercancel', finish);
+        canvas.addEventListener('lostpointercapture', finish);
+        return () => {
+          canvas.removeEventListener('pointerdown', onDown);
+          canvas.removeEventListener('pointermove', onMove);
+          canvas.removeEventListener('pointerup', finish);
+          canvas.removeEventListener('pointercancel', finish);
+          canvas.removeEventListener('lostpointercapture', finish);
+          if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current);
+          paintRafRef.current = 0;
+          stopMomentum();
+        };
+      }, [isNearViewport, paintOverlay]);
+
+      // 外層：閱讀尺（游標模式輕點設定位置）與便利貼拖曳
+      const handlePointerDown = (e) => {
+        if (e.target.closest('.sticky-note-card')) return;
+        if (pdfSpotlightRuler && pdfTool === 'cursor') {
+          setRulerYRatio(getNormPoint(e).y);
         }
       };
 
       const handlePointerMove = (e) => {
-        const pt = getNormPoint(e);
-
         if (draggingStickyRef.current) {
+          const pt = getNormPoint(e);
           const { id, offsetX, offsetY } = draggingStickyRef.current;
           onUpdateAnnotation(
             id,
@@ -2047,47 +2626,14 @@
           );
           return;
         }
-
         if (pdfSpotlightRuler && e.buttons === 1 && pdfTool === 'cursor') {
-          setRulerYRatio(pt.y);
+          setRulerYRatio(getNormPoint(e).y);
         }
-
-        if (pdfTool === 'eraser' && e.buttons === 1) {
-          onEraseAtPoint(pageNumber, pt);
-          return;
-        }
-
-        if (!drawingStrokeRef.current) return;
-        const stroke = drawingStrokeRef.current;
-        const isStraight = stroke.isStraight || e.shiftKey;
-
-        if (isStraight) {
-          const startPt = stroke.points[0];
-          let endPt = { ...pt };
-          if (e.shiftKey) {
-            const dx = Math.abs(endPt.x - startPt.x);
-            const dy = Math.abs(endPt.y - startPt.y);
-            if (dx > dy) endPt.y = startPt.y;
-            else endPt.x = startPt.x;
-          }
-          stroke.points = [startPt, endPt];
-        } else {
-          stroke.points.push(pt);
-        }
-        redrawStrokes();
       };
 
       const handlePointerUp = () => {
         if (draggingStickyRef.current) {
           draggingStickyRef.current = null;
-        }
-        if (drawingStrokeRef.current) {
-          const finished = drawingStrokeRef.current;
-          drawingStrokeRef.current = null;
-          if (finished.points.length >= 2) {
-            onCommitAnnotation(finished, false);
-          }
-          redrawStrokes();
         }
       };
 
@@ -2104,18 +2650,23 @@
           onPointerUp={handlePointerUp}
         >
           {/* 頁碼浮水印小角標 */}
-          <div className="absolute right-2.5 bottom-2 z-10 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] font-mono pointer-events-none">
+          <div className="absolute right-2.5 bottom-2 z-10 px-2 py-0.5 rounded bg-black/50 text-white text-[11px] font-mono pointer-events-none">
             P.{pageNumber}
           </div>
 
           {isNearViewport ? (
             <>
-              <canvas ref={pdfCanvasRef} className="block rounded-lg" />
+              <canvas ref={pdfCanvasRef} className="block rounded-lg" style={{ width: '100%', height: '100%' }} />
+              {/* 游標模式：覆蓋層不接收任何觸控，手指滑動＝捲動；書寫模式：touch-action none，由程式處理筆與手指 */}
               <canvas
                 ref={overlayCanvasRef}
-                className={`absolute inset-0 touch-none rounded-lg ${
-                  pdfTool === 'cursor' ? 'cursor-default' : 'cursor-crosshair'
-                }`}
+                className={`absolute inset-0 rounded-lg ${pdfTool === 'cursor' ? 'cursor-default' : 'cursor-crosshair'}`}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  touchAction: pdfTool === 'cursor' ? 'pan-x pan-y' : 'none',
+                  pointerEvents: pdfTool === 'cursor' ? 'none' : 'auto'
+                }}
               />
             </>
           ) : (
@@ -2167,7 +2718,7 @@
                         type="button"
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => setEditingStickyId(null)}
-                        className="px-1.5 py-0.5 rounded bg-black/20 hover:bg-black/30 text-[10px]"
+                        className="px-1.5 py-0.5 rounded bg-black/20 hover:bg-black/30 text-[11px]"
                       >
                         完成
                       </button>
@@ -2276,19 +2827,6 @@
 
       return (
         <>
-          {showPageDivider && (
-            <div className="pt-5 pb-2 flex items-center gap-3 select-none">
-              <button
-                onClick={() => H.onPageDivider(line.pageNumber)}
-                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-                className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border hover:opacity-100"
-              >
-                Page {line.pageNumber} / {numPages}
-              </button>
-              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-            </div>
-          )}
-
           <div
             ref={(el) => H.registerLineRef(idx, el)}
             data-line-idx={idx}
@@ -2452,12 +2990,15 @@
       // 第 0 秒從 localStorage 同步讀取 API Key、設定、自訂 Hashtag、資料夾與上次閱讀座標
       const initialSession = useMemo(() => readLSJson(LS_KEYS.SESSION_STATE, {}), []);
 
-      const [geminiApiKey, setGeminiApiKey] = useState(() =>
-        (window.localStorage.getItem(LS_KEYS.API_KEY) || '').trim()
-      );
-      const [geminiKeyDraft, setGeminiKeyDraft] = useState(() =>
-        (window.localStorage.getItem(LS_KEYS.API_KEY) || '').trim()
-      );
+      // AI 服務設定：目前使用的服務、各服務選用的模型、各服務的金鑰（只存在這台裝置）
+      const [aiConfig, setAiConfig] = useState(() => loadAIConfig());
+      const [aiKeys, setAiKeys] = useState(() => ({
+        gemini: getAIKey('gemini'),
+        openai: getAIKey('openai'),
+        anthropic: getAIKey('anthropic')
+      }));
+      const [aiDraft, setAiDraft] = useState(null); // 「AI 設定」視窗裡尚未儲存的內容
+      const [aiTest, setAiTest] = useState({ state: 'idle', msg: '' });
 
       const [settings, setSettings] = useState(() => ({
         ...DEFAULT_SETTINGS,
@@ -2497,6 +3038,7 @@
       const [docPages, setDocPages] = useState([]);
       const [pdfBytes, setPdfBytes] = useState(null);
       const [pdfDocInstance, setPdfDocInstance] = useState(null);
+      const [pageDims, setPageDims] = useState([]); // 每頁原始尺寸（縮放 1）：用來預留正確的頁面高度，避免捲動時跳位
 
       // 檢視模式與雙欄可拖曳寬度比例 (20% ~ 80%)
       const [viewMode, setViewMode] = useState(initialSession.viewMode || 'focus'); // 'focus' | 'split' | 'pdf'
@@ -2535,6 +3077,8 @@
       const [copiedPrompt, setCopiedPrompt] = useState(false);
       const [isSyncingPdf, setIsSyncingPdf] = useState(false);
       const [syncReport, setSyncReport] = useState(null);
+      const [lineClickNonce, setLineClickNonce] = useState(0); // 使用者點擊／跳轉到某段時 +1：同一段再點一次也會重新對齊 PDF
+      const [confirmDialog, setConfirmDialog] = useState(null); // { title, message, confirmLabel, onConfirm }
 
       // 反白查詞浮窗
       const [selectionPopover, setSelectionPopover] = useState(null);
@@ -2555,7 +3099,7 @@
       const [isOcrLoading, setIsOcrLoading] = useState(false);
       const [isExportingPdf, setIsExportingPdf] = useState(false);
 
-      // AI 問答狀態（固定使用 gemini-3.8-flash）
+      // AI 問答狀態（使用者在「AI 設定」選擇的服務與模型）
       const [quotedContext, setQuotedContext] = useState(null);
       const [thinkingLevel, setThinkingLevel] = useState('medium');
       const [chatMessages, setChatMessages] = useState(DEFAULT_WELCOME_MESSAGES());
@@ -2584,6 +3128,7 @@
       const persistTimerRef = useRef(null);
       const persistFnRef = useRef(null);
       const progressBarRef = useRef(null);       // 自動播放進度條：直接改 DOM，不觸發整頁重繪
+      const jumpAlignRef = useRef(false);        // 下一次 activeLine 變動要把 PDF 對齊到該段（點擊或從重點卡片跳回）
       const tapSelectRef = useRef(false);        // 這次 activeLine 變動是否來自「點擊文字」
       const pendingActiveBlockRef = useRef(null); // 切換 ADHD 模式時，記住目前所在段落
       const lineHandlersRef = useRef({});
@@ -2595,7 +3140,9 @@
       const renameBtnRef = useRef(false);
 
       const currentTheme = THEMES[settings.theme] || THEMES.slate;
-      const hasActiveApiKey = Boolean(geminiApiKey.trim());
+      const aiProvider = AI_PROVIDERS[aiConfig.provider] || AI_PROVIDERS.gemini;
+      const aiModel = String(aiConfig.models[aiConfig.provider] || '').trim();
+      const hasActiveApiKey = Boolean((aiKeys[aiConfig.provider] || '').trim());
       const adhdOn = settings.adhdMode === true;
       const isCoarse = useMemo(
         () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches,
@@ -2701,6 +3248,29 @@
         if (dbInitialized) idbSetScopedKV(currentOwnerUid, 'folders', folders);
       }, [folders, dbInitialized]);
 
+      // 文件載入後，在背景量好每一頁的尺寸（分批進行，不卡畫面）
+      useEffect(() => {
+        let cancelled = false;
+        setPageDims([]);
+        if (!pdfDocInstance) return undefined;
+        (async () => {
+          const dims = [];
+          for (let p = 1; p <= pdfDocInstance.numPages; p++) {
+            try {
+              const pg = await pdfDocInstance.getPage(p);
+              const vp = pg.getViewport({ scale: 1 });
+              dims.push({ w: vp.width, h: vp.height });
+            } catch {
+              dims.push(null);
+            }
+            if (cancelled) return;
+            if (p % 12 === 0) await new Promise((r) => setTimeout(r, 0));
+          }
+          if (!cancelled) setPageDims(dims);
+        })();
+        return () => { cancelled = true; };
+      }, [pdfDocInstance]);
+
       // 書庫選單關閉時，收起暫時性的確認／改名／搜尋狀態
       useEffect(() => {
         if (!showLibraryMenu) {
@@ -2710,16 +3280,22 @@
         }
       }, [showLibraryMenu]);
 
-      // 統一保存 API Key 函式（雙寫 localStorage + IndexedDB）
-      const saveApiKeyPermanently = useCallback(async (rawKey) => {
-        const clean = (rawKey || '').trim();
-        setGeminiApiKey(clean);
-        setGeminiKeyDraft(clean);
-        try {
-          window.localStorage.setItem(LS_KEYS.API_KEY, clean);
-        } catch {}
-        await idbSetScopedKV(currentOwnerUid, 'geminiApiKey', clean);
+      // 統一保存 AI 設定（雙寫 localStorage + IndexedDB）：服務、各服務的模型、各服務的金鑰。全部只存在這台裝置。
+      const saveAISettingsPermanently = useCallback(async (nextConfig, nextKeys) => {
+        saveAIConfig(nextConfig);
+        Object.keys(nextKeys).forEach((pid) => setAIKey(pid, nextKeys[pid]));
+        setAiConfig(nextConfig);
+        setAiKeys(nextKeys);
+        await idbSetScopedKV(currentOwnerUid, 'aiConfig', nextConfig);
+        await idbSetScopedKV(currentOwnerUid, 'geminiApiKey', nextKeys.gemini || '');
+        await idbSetScopedKV(currentOwnerUid, 'aiKeys', { openai: nextKeys.openai || '', anthropic: nextKeys.anthropic || '' });
       }, []);
+
+      const openAISettings = () => {
+        setAiDraft({ provider: aiConfig.provider, models: { ...aiConfig.models }, keys: {} }); // keys 只放「這次改動過的」；已儲存的金鑰不回填到輸入框
+        setAiTest({ state: 'idle', msg: '' });
+        setShowAccountModal(true);
+      };
 
       // 每個段落的座標系（供標註在「逐句」與「完整段落」兩種顯示間無縫對應）
       const blockIndex = useMemo(() => buildBlockIndex(docPages), [docPages]);
@@ -2746,7 +3322,8 @@
                 kind: 'block',
                 blockKey,
                 blockStart: 0,
-                sIdx: 0
+                sIdx: 0,
+                pdfY: typeof block.pdfY === 'number' ? block.pdfY : null // 這一段開頭在原 PDF 頁面內的位置（舊文件沒有，只跳頁）
               });
             } else {
               const sentences =
@@ -2765,7 +3342,13 @@
                   kind: 'sentence',
                   blockKey,
                   blockStart: bi && bi.sentStarts ? bi.sentStarts[sIdx] : -1,
-                  sIdx
+                  sIdx,
+                  pdfY:
+                    block.sentenceYs && typeof block.sentenceYs[sIdx] === 'number'
+                      ? block.sentenceYs[sIdx]
+                      : typeof block.pdfY === 'number'
+                      ? block.pdfY
+                      : null
                 });
               });
             }
@@ -2842,15 +3425,26 @@
       }, []);
 
       // 跳轉 PDF 頁碼輔助函式（相容連續滾動與單頁模式）
-      const jumpToPdfPage = useCallback((pageNum, smooth = true) => {
+      // yRatio（0~1，頁面由上往下的位置）有給時，捲到該位置（上方留一點空間）；沒給就捲到頁首
+      const jumpToPdfPage = useCallback((pageNum, smooth = true, yRatio = null) => {
         const safeP = Math.max(1, Math.min(docMeta.numPages || 1, pageNum));
         setCurrentPdfPage(safeP);
-        if (settings.pdfContinuousScroll && pdfScrollRef.current) {
-          const targetEl = pdfScrollRef.current.querySelector(`[data-pdf-page="${safeP}"]`);
-          if (targetEl) {
+        const root = pdfScrollRef.current;
+        if (!root) return;
+        const apply = () => {
+          const targetEl = root.querySelector(`[data-pdf-page="${safeP}"]`);
+          if (!targetEl) return;
+          if (typeof yRatio === 'number') {
+            const r = targetEl.getBoundingClientRect();
+            const c = root.getBoundingClientRect();
+            const pageTop = root.scrollTop + (r.top - c.top);
+            root.scrollTo({ top: Math.max(0, pageTop + yRatio * r.height - 56), behavior: smooth ? 'smooth' : 'auto' });
+          } else if (settings.pdfContinuousScroll) {
             targetEl.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
           }
-        }
+        };
+        if (settings.pdfContinuousScroll) apply();
+        else setTimeout(apply, 60); // 單頁模式：等該頁渲染出來再捲動
       }, [docMeta.numPages, settings.pdfContinuousScroll]);
 
       // 聚光燈行切換時捲動定位
@@ -2875,10 +3469,17 @@
           }
           if (!alreadyVisible) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        if (viewMode === 'split' && currentLine.pageNumber && currentLine.pageNumber !== currentPdfPage) {
-          jumpToPdfPage(currentLine.pageNumber, true);
+                // 雙欄：使用者點選（或從重點卡片跳回）時，PDF 對齊到該段開頭的頁碼與位置；
+        // 自動播放等「非點擊」造成的換行，只在換頁時才跟著翻頁，不打斷使用者自己捲動 PDF
+        if (viewMode === 'split' && currentLine.pageNumber) {
+          if (fromTap || jumpAlignRef.current) {
+            jumpAlignRef.current = false;
+            jumpToPdfPage(currentLine.pageNumber, true, currentLine.pdfY);
+          } else if (currentLine.pageNumber !== currentPdfPage) {
+            jumpToPdfPage(currentLine.pageNumber, true, currentLine.pdfY);
+          }
         }
-      }, [activeLineIdx, readingLines, viewMode, adhdOn]);
+      }, [activeLineIdx, readingLines, viewMode, adhdOn, lineClickNonce]);
 
       // 切換 ADHD 模式後，維持在同一個段落（內容高度大幅改變，不讓閱讀位置跑掉）
       useEffect(() => {
@@ -3017,8 +3618,10 @@
             idbTags,
             idbFolders,
             savedTransCache,
-            savedActiveId,
-            storedDocs
+                        savedActiveId,
+            storedDocs,
+            idbAiConfig,
+            idbAiKeys
           ] = await Promise.all([
             idbGetScopedKV(currentOwnerUid, 'geminiApiKey', ''),
             idbGetScopedKV(currentOwnerUid, 'settings', null),
@@ -3026,18 +3629,29 @@
             idbGetScopedKV(currentOwnerUid, 'folders', null),
             idbGetScopedKV(currentOwnerUid, 'quickTransCache', {}),
             idbGetScopedKV(currentOwnerUid, 'activeDocId', null),
-            idbGetAllDocs(currentOwnerUid)
+            idbGetAllDocs(currentOwnerUid),
+            idbGetScopedKV(currentOwnerUid, 'aiConfig', null),
+            idbGetScopedKV(currentOwnerUid, 'aiKeys', null)
           ]);
 
           if (!mounted) return;
 
-          // 若 localStorage 尚未寫入但舊版 IndexedDB 有金鑰，自動無縫遷移至 localStorage
-          const lsKey = (window.localStorage.getItem(LS_KEYS.API_KEY) || '').trim();
-          if (!lsKey && idbKey) {
-            await saveApiKeyPermanently(idbKey);
-          } else if (lsKey && lsKey !== idbKey) {
-            idbSetScopedKV(currentOwnerUid, 'geminiApiKey', lsKey);
+          // 若 localStorage 尚未寫入但 IndexedDB 有設定／金鑰，自動無縫遷移至 localStorage（舊使用者的 Gemini 金鑰與模型會直接保留）
+          const keysNow = { gemini: getAIKey('gemini'), openai: getAIKey('openai'), anthropic: getAIKey('anthropic') };
+          let aiChanged = false;
+          if (!keysNow.gemini && idbKey) { keysNow.gemini = idbKey; aiChanged = true; }
+          if (idbAiKeys && typeof idbAiKeys === 'object') {
+            ['openai', 'anthropic'].forEach((pid) => {
+              if (!keysNow[pid] && idbAiKeys[pid]) { keysNow[pid] = idbAiKeys[pid]; aiChanged = true; }
+            });
           }
+          let cfgNow = loadAIConfig();
+          if (!window.localStorage.getItem(LS_KEYS.AI_CONFIG) && idbAiConfig && AI_PROVIDERS[idbAiConfig.provider]) {
+            cfgNow = { provider: idbAiConfig.provider, models: { ...cfgNow.models, ...(idbAiConfig.models || {}) } };
+            aiChanged = true;
+          }
+          if (aiChanged) await saveAISettingsPermanently(cfgNow, keysNow);
+          else if (keysNow.gemini && keysNow.gemini !== idbKey) idbSetScopedKV(currentOwnerUid, 'geminiApiKey', keysNow.gemini);
 
           if (!window.localStorage.getItem(LS_KEYS.SETTINGS) && idbSettings) {
             setSettings((prev) => ({ ...prev, ...idbSettings }));
@@ -3063,7 +3677,7 @@
         }
         bootstrap();
         return () => { mounted = false; };
-      }, [activateDocumentRecord, saveApiKeyPermanently]);
+      }, [activateDocumentRecord, saveAISettingsPermanently]);
 
       // 自動持久儲存文獻進度、標註、行間筆記與對話紀錄
       useEffect(() => {
@@ -3178,6 +3792,7 @@
             setIsAutoPlaying((p) => !p);
           } else if (e.key === 'Escape') {
             setSelectionPopover(null);
+            setConfirmDialog(null);
             setSyncReport(null);
             setShowLibraryMenu(false);
             setShowSettingsPanel(false);
@@ -3257,19 +3872,18 @@
       };
 
       // =======================================================================
-      // AI 圖片轉文字（OCR 當前 PDF 頁面至專注閱讀區，使用 gemini-3.8-flash）
+      // AI 辨識本頁文字（OCR 當前 PDF 頁面至專注閱讀區，使用者選擇的 AI 服務與模型）
       // =======================================================================
       const handleOcrCurrentPdfPage = async () => {
         if (!pdfDocInstance || isOcrLoading) return;
-        const cleanKey = (geminiApiKey || window.localStorage.getItem(LS_KEYS.API_KEY) || '').trim();
-        if (!cleanKey) {
-          setShowAccountModal(true);
-          showToast('請先設定 Gemini API Key 以啟用 AI 圖片轉文字');
+        if (!hasActiveApiKey) {
+          openAISettings();
+          showToast('請先在「AI 設定」輸入 API 金鑰，才能使用「AI 辨識本頁文字」');
           return;
         }
 
         setIsOcrLoading(true);
-        showToast(`正在使用 ${LOCKED_GEMINI_MODEL} 辨識第 ${currentPdfPage} 頁圖片文字...`);
+        showToast(`正在請 ${aiProvider.short}（${aiModel}）辨識第 ${currentPdfPage} 頁文字，請稍候...`);
 
         try {
           const page = await pdfDocInstance.getPage(currentPdfPage);
@@ -3300,9 +3914,8 @@
             required: ['blocks']
           };
 
-          const { text } = await callGeminiFlash({
-            geminiKey: cleanKey,
-            systemInstruction: '你是精準的學術文獻 OCR 引擎。請完整辨識圖片中的所有段落與標題，過濾頁碼雜訊，保留原文語言。type 僅能為 "heading" 或 "paragraph"。',
+          const { text } = await callAI({
+            systemInstruction: '你是精準的學術文獻 OCR 引擎。請完整辨識圖片中的所有段落與標題，過濾頁碼雜訊，保留原文語言。type 僅能為 "heading" 或 "paragraph"。只有明顯是章節標題（字體明顯較大或粗體、獨立成行、沒有句號）才標 heading；一般內文一律標 paragraph。同一個段落的各行要合併成一個區塊，因換行而用連字號 - 斷開的英文單字要接回完整單字，不要逐行輸出。',
             messages: [
               {
                 role: 'user',
@@ -3316,9 +3929,7 @@
           });
 
           const parsed = JSON.parse(text);
-          const newBlocks = Array.isArray(parsed?.blocks)
-            ? parsed.blocks.filter((b) => b?.text?.trim())
-            : [];
+          const newBlocks = Array.isArray(parsed?.blocks) ? sanitizeOcrBlocks(parsed.blocks.filter((b) => b?.text?.trim())) : [];
 
           if (newBlocks.length === 0) {
             showToast(`第 ${currentPdfPage} 頁未偵測到可辨識文字`);
@@ -3345,10 +3956,10 @@
               );
               return updatedPages;
             });
-            showToast(`第 ${currentPdfPage} 頁 AI 圖片轉文字完成！已同步至左側專注閱讀區`);
+            showToast(`第 ${currentPdfPage} 頁 AI 辨識完成！已放進左側閱讀區`);
           }
         } catch (err) {
-          showToast(`OCR 辨識失敗：${err.message}`);
+          showToast(`AI 辨識失敗：${err.message}`);
         } finally {
           setIsOcrLoading(false);
         }
@@ -3390,6 +4001,17 @@
             }
 
             if ((ann.type === 'pen' || ann.type === 'marker') && ann.points?.length >= 2) {
+              const q0 = ann.points[0];
+              if (ann.points.every((pt) => pt.x === q0.x && pt.y === q0.y)) {
+                page.drawCircle({
+                  x: q0.x * width,
+                  y: (1 - q0.y) * height,
+                  size: (ann.type === 'marker' ? Math.max(12, width * 0.022) : Math.max(2.2, width * 0.0036)) / 2,
+                  color: rgb(r, g, b),
+                  opacity: ann.type === 'marker' ? 0.34 : 0.9
+                });
+                continue;
+              }
               for (let i = 1; i < ann.points.length; i++) {
                 const p1 = ann.points[i - 1];
                 const p2 = ann.points[i];
@@ -3545,6 +4167,58 @@
       // =======================================================================
       // 匯入 PDF、資料夾管理與備份還原
       // =======================================================================
+      // 讀入 PDF 位元組 → 以最新規則轉成文字 → 建立文件紀錄（匯入與「重新轉換」共用）
+      // extractVersion：3＝最新規則；1＝新版轉換失敗，改用相容模式（extractError 會記下原因，畫面也會提示）
+      const buildRecordFromPdfBytes = async ({ filename, fileSize, rawBytes, folderId }) => {
+        const pdfDoc = await window.pdfjsLib.getDocument({
+          data: rawBytes.slice(0),
+          cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+          cMapPacked: true,
+          standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+        }).promise;
+
+        const onExtractProgress = (curr, total) => setImportProgressText(`精準擷取文字中 (${curr} / ${total} 頁)...`);
+        let extracted;
+        let extractVersion = 3;
+        let extractError = '';
+        try {
+          extracted = await extractStructuredPagesFromPdfV2(pdfDoc, settings.filterHeaderFooter, onExtractProgress);
+        } catch (v2Err) {
+          console.warn('新版文字擷取失敗，改用相容模式：', v2Err);
+          extractVersion = 1;
+          extractError = String((v2Err && v2Err.message) || v2Err);
+          extracted = await extractStructuredPagesFromPdf(pdfDoc, settings.filterHeaderFooter, onExtractProgress);
+        }
+        const { pages, totalCharCount } = extracted;
+
+        const cleanTitle = filename.replace(/\.pdf$/i, '');
+        const firstHeading = pages[0]?.blocks?.find((b) => b.type === 'heading')?.text || cleanTitle;
+
+        const record = {
+          id: `${currentOwnerUid}-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          ownerUid: currentOwnerUid,
+          folderId: folderId || '',
+          filename,
+          fileSize,
+          title: firstHeading.length <= 85 ? firstHeading : cleanTitle,
+          subtitle: `${filename} • 共 ${pdfDoc.numPages} 頁`,
+          domainHint: `文獻 (${cleanTitle})`,
+          numPages: pdfDoc.numPages,
+          extractVersion,
+          ...(extractError ? { extractError } : {}),
+          pages,
+          pdfBytes: rawBytes,
+          activeLineIdx: 0,
+          progressPct: 1,
+          textHighlights: [],
+          inlineNotes: {},
+          pdfAnnotations: [],
+          chatMessages: DEFAULT_WELCOME_MESSAGES(),
+          updatedAt: Date.now()
+        };
+        return { record, pdfDoc, totalCharCount };
+      };
+
       const handleImportPdfFiles = async (fileList) => {
         if (!fileList || fileList.length === 0) return;
         setShowLibraryMenu(false);
@@ -3562,54 +4236,10 @@
             setImportProgressText(`正在讀取 ${file.name}...`);
             const arrayBuf = await file.arrayBuffer();
             const rawBytes = new Uint8Array(arrayBuf);
-            const pdfDoc = await window.pdfjsLib.getDocument({
-              data: rawBytes.slice(0),
-              cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-              cMapPacked: true,
-              standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
-            }).promise;
-
-            const onExtractProgress = (curr, total) =>
-              setImportProgressText(`精準擷取文字中 (${curr} / ${total} 頁)...`);
-            let extracted;
-            let extractVersion = 2;
-            try {
-              extracted = await extractStructuredPagesFromPdfV2(pdfDoc, settings.filterHeaderFooter, onExtractProgress);
-            } catch (v2Err) {
-              console.warn('新版文字擷取失敗，改用舊版：', v2Err);
-              extractVersion = 1;
-              extracted = await extractStructuredPagesFromPdf(pdfDoc, settings.filterHeaderFooter, onExtractProgress);
-            }
-            const { pages, totalCharCount } = extracted;
-
-            const cleanTitle = file.name.replace(/\.pdf$/i, '');
-            const firstHeading = pages[0]?.blocks?.find((b) => b.type === 'heading')?.text || cleanTitle;
-
-            const record = {
-              id: `${currentOwnerUid}-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              ownerUid: currentOwnerUid,
-              folderId: targetFolderId,
-              filename: file.name,
-              fileSize: file.size,
-              title: firstHeading.length <= 85 ? firstHeading : cleanTitle,
-              subtitle: `${file.name} • 共 ${pdfDoc.numPages} 頁`,
-              domainHint: `文獻 (${cleanTitle})`,
-              numPages: pdfDoc.numPages,
-              extractVersion,
-              pages,
-              pdfBytes: rawBytes,
-              activeLineIdx: 0,
-              progressPct: 1,
-              textHighlights: [],
-              inlineNotes: {},
-              pdfAnnotations: [],
-              chatMessages: DEFAULT_WELCOME_MESSAGES(),
-              updatedAt: Date.now()
-            };
-
-            await idbPutDoc(record, currentOwnerUid);
-            setLibraryDocs((prev) => [record, ...prev]);
-            newestRecord = { record, pdfDoc, totalCharCount };
+            const built = await buildRecordFromPdfBytes({ filename: file.name, fileSize: file.size, rawBytes, folderId: targetFolderId });
+            await idbPutDoc(built.record, currentOwnerUid);
+            setLibraryDocs((prev) => [built.record, ...prev]);
+            newestRecord = built;
           } catch (err) {
             showToast(`匯入失敗：${err.message}`);
           }
@@ -3622,13 +4252,44 @@
           const { record, totalCharCount } = newestRecord;
           await activateDocumentRecord(record, false);
 
-          if (totalCharCount < record.numPages * 15) {
+          if (record.extractError) {
+            showToast(`⚠ 新版文字轉換失敗，已改用相容模式（原因：${record.extractError}）`);
+          } else if (totalCharCount < record.numPages * 15) {
             setViewMode('split');
-            showToast('偵測為掃描圖片型 PDF，可點工具列「AI 圖片轉文字」擷取內文');
+            showToast('偵測為掃描圖片型 PDF，可點工具列「AI 辨識本頁文字」擷取內文');
           } else {
             showToast(`已成功匯入「${record.filename}」`);
           }
         }
+      };
+
+      // 用這份文件已存的 PDF 原檔，以最新規則重新轉換，另存成「新文件」（原文件與它的標註、筆記完全不動）
+      const handleReextractDocument = (item) => {
+        setConfirmDialog({
+          title: '用最新規則重新轉換文字？',
+          message: `會用「${shortQuote(item.title, 30)}」的 PDF 原檔，以目前最新的轉換規則另存成一份新文件。原本這份文件、它的標註與筆記完全不會被改動。`,
+          confirmLabel: '另存為新文件',
+          onConfirm: async () => {
+            if (!item.pdfBytes) {
+              showToast('找不到這份文件的 PDF 原檔，請重新匯入該 PDF');
+              return;
+            }
+            setShowLibraryMenu(false);
+            try {
+              setImportProgressText('正在用最新規則重新轉換文字...');
+              const bytes = item.pdfBytes instanceof Uint8Array ? item.pdfBytes : new Uint8Array(item.pdfBytes);
+              const built = await buildRecordFromPdfBytes({ filename: item.filename, fileSize: item.fileSize, rawBytes: bytes, folderId: item.folderId || '' });
+              await idbPutDoc(built.record, currentOwnerUid);
+              setLibraryDocs((prev) => [built.record, ...prev]);
+              setImportProgressText('');
+              await activateDocumentRecord(built.record, false);
+              showToast(built.record.extractError ? `⚠ 已另存新文件，但新版轉換失敗改用相容模式（${built.record.extractError}）` : `已另存為新文件「${built.record.title}」（最新轉換規則）`);
+            } catch (err) {
+              setImportProgressText('');
+              showToast(`重新轉換失敗：${err.message}`);
+            }
+          }
+        });
       };
 
       const handleMoveDocToFolder = async (docId, nextFolderId) => {
@@ -3786,7 +4447,7 @@
       };
 
       // =======================================================================
-      // 反白即翻（免金鑰字典）與語境深譯（固定 gemini-3.8-flash）
+      // 反白即翻（免金鑰字典）與語境深譯（使用者選擇的 AI 服務與模型）
       // =======================================================================
       const triggerQuickInstantTranslate = useCallback(async (selectedText) => {
         const cleanKey = selectedText.trim().slice(0, 350);
@@ -4000,6 +4661,7 @@
             if (!window.getSelection()?.toString().trim()) {
               tapSelectRef.current = true;
               setActiveLineIdx(idx);
+              setLineClickNonce((n) => n + 1);
               setTimeout(() => { tapSelectRef.current = false; }, 400);
             }
           },
@@ -4019,15 +4681,24 @@
               else delete next[key];
               return next;
             }),
-          onNoteClear: (key) => {
-            setInlineNotes((prev) => {
-              const next = { ...prev };
-              delete next[key];
-              return next;
-            });
+          onNoteClear: (key) =>
+            setConfirmDialog({
+              title: '清空這則行間筆記？',
+              message: '筆記內容會被刪除，無法復原。',
+              confirmLabel: '清空',
+              onConfirm: () => {
+                setInlineNotes((prev) => {
+                  const next = { ...prev };
+                  delete next[key];
+                  return next;
+                });
+                setEditingInlineLineId(null);
+              }
+            }),
+          onNoteDone: () => {
             setEditingInlineLineId(null);
+            showToast('筆記已自動儲存');
           },
-          onNoteDone: () => setEditingInlineLineId(null),
           onNoteEdit: (key) => setEditingInlineLineId(key)
         }),
         []
@@ -4035,10 +4706,9 @@
 
       const handleRunContextualTranslate = async () => {
         if (!selectionPopover || selectionPopover.deepLoading) return;
-        const activeKey = (geminiApiKey || window.localStorage.getItem(LS_KEYS.API_KEY) || '').trim();
-        if (!activeKey) {
-          setShowAccountModal(true);
-          showToast('請設定一次 Google Gemini API Key，之後將永久自動生效');
+        if (!hasActiveApiKey) {
+          openAISettings();
+          showToast('請先在「AI 設定」輸入 API 金鑰，才能使用「語境深譯」');
           return;
         }
 
@@ -4070,8 +4740,7 @@
 
 請根據學術領域脈絡，提供嚴謹貼切的繁體中文語境翻譯與深層論證角色解析。`;
 
-          const { text } = await callGeminiFlash({
-            geminiKey: activeKey,
+          const { text } = await callAI({
             systemInstruction: '嚴謹學術導讀譯者。緊扣文章脈絡以繁體中文回傳 JSON。',
             messages: [{ role: 'user', text: prompt }],
             thinkingLevelObj: THINKING_LEVELS[1],
@@ -4127,7 +4796,7 @@
           const el = document.getElementById(`hl-card-${newHl.id}`);
           if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }, 90);
-        showToast(newHl.parentId ? '已加入子標註，可自由選取 Hashtag 或編輯筆記' : '已加入重點標註，可自由選取 Hashtag 或編輯筆記');
+        showToast(newHl.parentId ? '已加入子標註，可自由選取標籤或編輯筆記' : '已加入重點標註，可自由選取標籤或編輯筆記');
       };
 
       // ADHD 專注模式開關：只改變顯示方式，筆記與標註資料完全不動
@@ -4156,7 +4825,9 @@
         if (viewMode === 'pdf') setViewMode('split');
 
         setIsAutoPlaying(false);
+        jumpAlignRef.current = true;
         setActiveLineIdx(index);
+        setLineClickNonce((n) => n + 1);
         const pulseId = readingLines[index].id;
         setPulseLineId(pulseId);
 
@@ -4227,8 +4898,19 @@
       };
 
       const requestDeleteHighlight = (hl) => {
-        if ((childCountById[hl.id] || 0) > 0) setParentDeletePromptId(hl.id);
-        else deleteHighlightWithMode(hl.id, 'cascade');
+        if ((childCountById[hl.id] || 0) > 0) {
+          setParentDeletePromptId(hl.id);
+          return;
+        }
+        setConfirmDialog({
+          title: '刪除這則重點？',
+          message: `「${shortQuote(hl.quote, 40)}」連同它的筆記與標籤會被刪除，無法復原。`,
+          confirmLabel: '刪除',
+          onConfirm: () => {
+            deleteHighlightWithMode(hl.id, 'cascade');
+            showToast('已刪除重點');
+          }
+        });
       };
 
       // 「+ 子標註」：鎖定母標註，跳到原文，等使用者反白選字
@@ -4294,10 +4976,9 @@
         const question = chatInput.trim();
         if ((!question && !quotedContext) || isChatSending) return;
 
-        const activeKey = (geminiApiKey || window.localStorage.getItem(LS_KEYS.API_KEY) || '').trim();
-        if (!activeKey) {
-          setShowAccountModal(true);
-          showToast('請設定一次 Google Gemini API Key，之後將永久生效');
+        if (!hasActiveApiKey) {
+          openAISettings();
+          showToast('請先在「AI 設定」輸入 API 金鑰，才能使用「問問 AI」');
           return;
         }
 
@@ -4333,8 +5014,7 @@
 
           historyMsgs.push({ role: 'user', text: currentTurnPrompt });
 
-          const { text, thought } = await callGeminiFlash({
-            geminiKey: activeKey,
+          const { text, thought } = await callAI({
             systemInstruction: '你是專為 ADHD 設計的學術導讀助理。回答結構清晰、條列重點，使用繁體中文。',
             messages: historyMsgs,
             thinkingLevelObj: levelObj,
@@ -4346,8 +5026,8 @@
             {
               id: `a-${Date.now()}`,
               role: 'assistant',
-              model: LOCKED_GEMINI_MODEL,
-              thinkingLabel: levelObj.label,
+              model: `${aiProvider.short} · ${aiModel}`,
+              thinkingLabel: aiProvider.id === 'gemini' ? levelObj.label : '',
               thought,
               quote: currentQuote?.quote || '',
               content: text || '已完成推理。'
@@ -4359,7 +5039,7 @@
             {
               id: `err-${Date.now()}`,
               role: 'assistant',
-              model: LOCKED_GEMINI_MODEL,
+              model: `${aiProvider.short} · ${aiModel}`,
               thinkingLabel: '異常',
               content: `無法取得回應：${err.message}`
             }
@@ -4811,7 +5491,7 @@
                                       >
                                         取消
                                       </button>
-                                      <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>也可按 Enter／Esc</span>
+                                      <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>也可按 Enter／Esc</span>
                                     </div>
                                   </div>
                                 ) : (
@@ -4833,6 +5513,14 @@
                                     <span>進度 {item.progressPct || 1}%</span>
                                     <span>•</span>
                                     <span>{formatFileSize(item.fileSize)}</span>
+                                    {item.extractVersion === 3 ? null : (
+                                      <span
+                                        style={{ color: 'var(--danger)' }}
+                                        title={item.extractError ? `新版轉換失敗，使用相容模式：${item.extractError}` : '這份文件是用舊版規則轉換的（段落或標題可能不準），可按右側的重新轉換按鈕，用最新規則另存新文件'}
+                                      >
+                                        • 舊版轉換{item.extractError ? '（相容模式）' : ''}
+                                      </span>
+                                    )}
                                   </div>
                                 </button>
                                 )}
@@ -4843,7 +5531,7 @@
                                   onClick={(e) => e.stopPropagation()}
                                   onChange={(e) => handleMoveDocToFolder(item.id, e.target.value)}
                                   style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                                  className="h-7 px-1.5 rounded-lg border text-[10px] max-w-[92px] outline-none shrink-0"
+                                  className="h-7 px-1.5 rounded-lg border text-[11px] max-w-[92px] outline-none shrink-0"
                                   title="移動至分類資料夾"
                                 >
                                   <option value="">未分類</option>
@@ -4851,6 +5539,19 @@
                                     <option key={f.id} value={f.id}>📁 {f.name}</option>
                                   ))}
                                 </select>
+
+                                {renamingDocId !== item.id && !isConfirming && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReextractDocument(item);
+                                    }}
+                                    className="p-1.5 rounded-lg opacity-55 hover:opacity-100 transition shrink-0"
+                                    title="用最新規則重新轉換文字（另存成新文件，原文件不動）"
+                                  >
+                                    <Icon name="sync" className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
 
                                 {renamingDocId !== item.id && !isConfirming && (
                                   <button
@@ -4976,7 +5677,7 @@
                   title="切換反白即翻（免金鑰高速字典）"
                 >
                   <span className="w-2 h-2 rounded-full" style={{ backgroundColor: settings.instantTranslate ? 'var(--warn)' : 'var(--border-color)' }} />
-                  <span className="hidden 2xl:inline">反白即翻</span>
+                  <span className="hidden md:inline">選字即時翻譯</span>
                   <span className="2xl:hidden"><Icon name="zap" className="w-3.5 h-3.5" /></span>
                 </button>
 
@@ -4989,7 +5690,7 @@
                   title="保存標註 PDF（將手寫線條、便利貼與重點附錄烙印回原始 PDF 下載）"
                 >
                   <Icon name="download" className="w-3.5 h-3.5 opacity-80" />
-                  <span className="hidden xl:inline">{isExportingPdf ? '處理中...' : '標註 PDF'}</span>
+                  <span className="hidden md:inline">{isExportingPdf ? '處理中...' : '匯出標註 PDF'}</span>
                 </button>
 
                 {/* 純文字 PDF 按鈕 */}
@@ -5001,7 +5702,7 @@
                   title="匯出完整多頁純文字 PDF（不含閱讀框與變暗遮罩，保留底色重點與行間筆記）"
                 >
                   <Icon name="printer" className="w-3.5 h-3.5 opacity-80" />
-                  <span className="hidden xl:inline">純文字 PDF</span>
+                  <span className="hidden md:inline">列印純文字 PDF</span>
                 </button>
 
                 {/* 完整閱讀設定面板 */}
@@ -5015,7 +5716,7 @@
                     className="h-9 px-2.5 sm:px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
                   >
                     <Icon name="sliders" className="w-3.5 h-3.5 opacity-75" />
-                    <span className="hidden xl:inline">閱讀設定</span>
+                    <span className="hidden md:inline">閱讀設定</span>
                   </button>
 
                   {showSettingsPanel && (
@@ -5278,28 +5979,25 @@
                   <Icon name="sparkles" className="w-3.5 h-3.5 opacity-85" />
                   <span className="hidden sm:inline">筆記與 AI</span>
                   {textHighlights.length > 0 && !showRightSidebar && (
-                    <span className="px-1.5 py-0.5 text-[10px] rounded-full" style={{ backgroundColor: 'var(--accent-soft)' }}>
+                    <span className="px-1.5 py-0.5 text-[11px] rounded-full" style={{ backgroundColor: 'var(--accent-soft)' }}>
                       {textHighlights.length}
                     </span>
                   )}
                 </button>
 
-                {/* API 金鑰設定按鈕 */}
+                {/* AI 設定按鈕：選擇 AI 服務與模型、輸入金鑰 */}
                 <button
-                  onClick={() => {
-                    setGeminiKeyDraft(geminiApiKey);
-                    setShowAccountModal(true);
-                  }}
+                  onClick={openAISettings}
                   style={{
                     backgroundColor: hasActiveApiKey ? 'var(--accent-soft)' : 'var(--bg-subtle)',
                     borderColor: hasActiveApiKey ? 'var(--accent)' : 'var(--border-color)'
                   }}
                   className="h-9 px-2.5 sm:px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
-                  title="設定 Google Gemini API Key（設定一次永久保存）"
+                  title="AI 設定：選擇 AI 服務與模型、輸入 API 金鑰（只存在這台裝置）"
                 >
                   <Icon name="user" className="w-3.5 h-3.5 opacity-80" />
-                  <span className="hidden 2xl:inline">
-                    {hasActiveApiKey ? 'Gemini 已就緒' : 'API 金鑰'}
+                  <span className="hidden md:inline">
+                    {hasActiveApiKey ? `AI 已就緒` : 'AI 設定'}
                   </span>
                 </button>
               </div>
@@ -5365,48 +6063,6 @@
                         viewMode === 'split' ? 'w-full md:shrink-0 max-md:!w-full max-md:!basis-1/2 max-md:min-h-0 max-md:border-b' : 'flex-1'
                       }`}
                     >
-                      {/* ADHD 專注模式開關：預設關閉；選擇會被記住 */}
-                      <div
-                        className="sticky top-0 z-10 -mt-8 mb-5 -mx-4 sm:-mx-8 px-4 sm:px-8 py-1.5 border-b backdrop-blur-md"
-                        style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
-                      >
-                        <div className="mx-auto flex items-center justify-between gap-3" style={{ maxWidth: `${settings.maxWidth}px` }}>
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold flex items-center gap-1.5">
-                              <Icon name="eye" className="w-3.5 h-3.5 opacity-80" />
-                              <span>ADHD 專注模式</span>
-                              <span
-                                className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
-                                style={{ backgroundColor: adhdOn ? 'var(--accent)' : 'var(--bg-subtle)', color: adhdOn ? '#fff' : 'var(--text-muted)' }}
-                              >
-                                {adhdOn ? '開' : '關'}
-                              </span>
-                            </div>
-                            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                              {adhdOn ? '逐句聚焦、其餘變暗，可自動播放' : '顯示完整段落（預設）'}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={adhdOn}
-                            aria-label="ADHD 專注模式"
-                            onClick={() => toggleAdhdMode(!adhdOn)}
-                            className="relative inline-flex h-11 w-16 shrink-0 items-center justify-center focus:outline-none"
-                          >
-                            <span
-                              style={{ backgroundColor: adhdOn ? 'var(--accent)' : 'var(--border-color)' }}
-                              className="relative inline-flex h-7 w-12 rounded-full transition-colors duration-200"
-                            >
-                              <span
-                                style={{ transform: adhdOn ? 'translateX(22px)' : 'translateX(3px)' }}
-                                className="inline-block h-[22px] w-[22px] rounded-full bg-white shadow transition-transform duration-200 mt-[3px]"
-                              />
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-
                       <div style={{ maxWidth: `${settings.maxWidth}px` }} className={`mx-auto ${fontClass}`}>
                         <div className="mb-8 pb-5 border-b" style={{ borderColor: 'var(--border-color)' }}>
                           <div className="flex items-center flex-wrap gap-2 text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
@@ -5428,7 +6084,7 @@
                           >
                             <p className="text-sm font-semibold">本檔案未擷取到文字圖層（可能為掃描圖片型 PDF）</p>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              請點擊右側 PDF 工具列上的「AI 圖片轉文字」，使用 {LOCKED_GEMINI_MODEL} 辨識圖片文字。
+                              請點擊右側 PDF 工具列上的「AI 辨識本頁文字」，使用您選擇的 AI（{aiProvider.short} · {aiModel}）辨識圖片文字。
                             </p>
                             {viewMode === 'focus' && (
                               <button
@@ -5653,7 +6309,7 @@
                                 className="h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1 border transition"
                               >
                                 <Icon name={tool.icon} className="w-3.5 h-3.5" />
-                                <span className="hidden 2xl:inline">{tool.label}</span>
+                                <span className="hidden md:inline">{tool.label}</span>
                               </button>
                             );
                           })}
@@ -5670,7 +6326,32 @@
                               title="切換直線模式（按住 Shift 鍵可鎖定水平／垂直）"
                             >
                               <span>直線</span>
-                              <span className="text-[10px] font-bold">{drawMode === 'line' ? 'ON' : 'OFF'}</span>
+                              <span className="text-[11px] font-bold">{drawMode === 'line' ? 'ON' : 'OFF'}</span>
+                            </button>
+                          )}
+
+                          {/* 書寫模式：手指預設用來捲動；需要時可開啟「手指也能寫」（沒有觸控筆的人用） */}
+                          {pdfTool !== 'cursor' && (
+                            <button
+                              type="button"
+                              aria-pressed={settings.fingerDraw}
+                              onClick={() => {
+                                setSettings((s0) => {
+                                  const next = !s0.fingerDraw;
+                                  showToast(next ? '手指也能書寫（捲動請改用兩側空白處或切換回「游標」）' : '手指用來捲動，觸控筆用來書寫');
+                                  return { ...s0, fingerDraw: next };
+                                });
+                              }}
+                              style={
+                                settings.fingerDraw
+                                  ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
+                                  : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
+                              }
+                              className="h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1 border transition"
+                              title="開啟後，手指也可以書寫；關閉時手指只用來上下捲動，只有觸控筆或滑鼠會書寫"
+                            >
+                              <span>手指也能寫</span>
+                              <span className="text-[11px] font-bold">{settings.fingerDraw ? '開' : '關'}</span>
                             </button>
                           )}
 
@@ -5683,7 +6364,7 @@
                             title="復原上一步標註或便利貼 (Ctrl / Cmd + Z)"
                           >
                             <Icon name="undo" className="w-3.5 h-3.5" />
-                            <span className="hidden xl:inline">復原</span>
+                            <span className="hidden md:inline">復原</span>
                           </button>
 
                           {/* 顏色選擇 */}
@@ -5714,7 +6395,7 @@
                             title="ADHD 視覺遮罩閱讀尺"
                           >
                             <Icon name="eye" className="w-3.5 h-3.5" />
-                            <span className="hidden 2xl:inline">閱讀尺</span>
+                            <span className="hidden md:inline">閱讀尺</span>
                           </button>
 
                           {/* 手動同步文字重點底色至 PDF */}
@@ -5726,7 +6407,7 @@
                             title="把文字重點的莫蘭迪底色畫到 PDF 對應句子上（按下才執行，可 Ctrl/Cmd+Z 復原）"
                           >
                             <Icon name="sync" className="w-3.5 h-3.5" />
-                            <span className="hidden xl:inline">{isSyncingPdf ? '同步中...' : '同步重點至 PDF'}</span>
+                            <span className="hidden md:inline">{isSyncingPdf ? '同步中...' : '同步重點至 PDF'}</span>
                           </button>
 
                           {/* AI 圖片轉文字 (OCR) 按鈕 */}
@@ -5735,10 +6416,10 @@
                             disabled={isOcrLoading || !pdfDocInstance}
                             style={{ backgroundColor: 'var(--accent-soft)', borderColor: 'var(--accent)', color: 'var(--accent-text)' }}
                             className="h-7 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition hover:opacity-90 disabled:opacity-40"
-                            title={`使用 ${LOCKED_GEMINI_MODEL} 將第 ${currentPdfPage} 頁圖片辨識為專注文字`}
+                            title={`請 AI（${aiProvider.short} · ${aiModel}）辨識第 ${currentPdfPage} 頁的文字，並放進左側閱讀區（掃描檔或圖片型 PDF 用）`}
                           >
                             <Icon name="camera" className="w-3.5 h-3.5" />
-                            <span>{isOcrLoading ? '辨識中...' : 'AI 圖片轉文字'}</span>
+                            <span>{isOcrLoading ? '辨識中...' : 'AI 辨識本頁文字'}</span>
                           </button>
                         </div>
                       </div>
@@ -5752,7 +6433,7 @@
                           }
                         }}
                         className="flex-1 overflow-auto p-4 flex flex-col items-center"
-                        style={{ backgroundColor: 'var(--bg-subtle)' }}
+                        style={{ backgroundColor: 'var(--bg-subtle)', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
                       >
                         {settings.pdfContinuousScroll ? (
                           pdfPageNumbers.map((pNum) => (
@@ -5764,6 +6445,8 @@
                               pdfTool={pdfTool}
                               drawMode={drawMode}
                               activeBrushColor={activeBrushColor}
+                              pageBase={pageDims[pNum - 1] || undefined}
+                              fingerDraw={settings.fingerDraw}
                               pageAnnotations={pdfAnnotations.filter((a) => a.page === pNum)}
                               onCommitAnnotation={commitPdfAnnotation}
                               onUpdateAnnotation={updatePdfAnnotation}
@@ -5785,6 +6468,8 @@
                             pdfTool={pdfTool}
                             drawMode={drawMode}
                             activeBrushColor={activeBrushColor}
+                            pageBase={pageDims[currentPdfPage - 1] || undefined}
+                            fingerDraw={settings.fingerDraw}
                             pageAnnotations={pdfAnnotations.filter((a) => a.page === currentPdfPage)}
                             onCommitAnnotation={commitPdfAnnotation}
                             onUpdateAnnotation={updatePdfAnnotation}
@@ -5803,7 +6488,7 @@
                 </>
               )}
 
-              {/* 右側邊欄：重點筆記（修復 Hashtag 跳出 ＋ 自訂標籤）& 問問 Gemini (鎖定 gemini-3.8-flash) */}
+              {/* 右側邊欄：重點筆記 ＆ 問問 AI */}
               {showRightSidebar && (
                 <div
                   className="lg:hidden absolute inset-0 z-20 bg-black/30"
@@ -5832,7 +6517,7 @@
                         className="flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition"
                       >
                         <Icon name="chat" className="w-3.5 h-3.5" />
-                        <span>問問 Gemini</span>
+                        <span>問問 AI</span>
                       </button>
                     </div>
                     <button onClick={() => setShowRightSidebar(false)} className="p-1.5 rounded-lg opacity-70 hover:opacity-100">
@@ -6004,7 +6689,7 @@
                             type="text"
                             value={newTagInput}
                             onChange={(e) => setNewTagInput(e.target.value)}
-                            placeholder="新增自訂 Hashtag（輸入後按 Enter）..."
+                            placeholder="新增自訂標籤（輸入後按 Enter）..."
                             style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                             className="flex-1 h-7 px-2.5 rounded-lg border text-[11px] outline-none"
                           />
@@ -6085,7 +6770,7 @@
                                           <span style={{ backgroundColor: cObj.hex }} className="w-2.5 h-2.5 rounded-full inline-block" />
                                           <span>P.{hl.pageNumber || 1} • {hl.createdAt || '重點'}</span>
                                           {hl.tag && (
-                                            <span className="px-2 py-0.5 rounded-md font-semibold text-[10px]" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
+                                            <span className="px-2 py-0.5 rounded-md font-semibold text-[11px]" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                                               #{hl.tag}
                                             </span>
                                           )}
@@ -6186,7 +6871,7 @@
 
                                       {/* 卡片內自由點選切換 Hashtag 膠囊（不觸發關閉） */}
                                       <div className="space-y-1.5">
-                                        <div className="text-[10px] opacity-70 font-medium">點選切換 Hashtag：</div>
+                                        <div className="text-[11px] opacity-70 font-medium">點選切換標籤：</div>
                                         <div className="flex flex-wrap gap-1.5">
                                           {allAvailableTags.map((t) => {
                                             const selected = hl.tag === t;
@@ -6204,7 +6889,7 @@
                                                     ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
                                                     : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }
                                                 }
-                                                className="px-2 py-0.5 rounded-md border text-[10px] font-medium transition"
+                                                className="px-2 py-0.5 rounded-md border text-[11px] font-medium transition"
                                               >
                                                 #{t}
                                               </button>
@@ -6229,7 +6914,7 @@
                                             }}
                                             placeholder="+ 輸入新標籤按套用..."
                                             style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                                            className="flex-1 h-6 px-2 rounded border text-[10px] outline-none"
+                                            className="flex-1 h-6 px-2 rounded border text-[11px] outline-none"
                                           />
                                           <button
                                             type="button"
@@ -6240,7 +6925,7 @@
                                               }
                                             }}
                                             style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                                            className="h-6 px-2 rounded border text-[10px] font-medium shrink-0"
+                                            className="h-6 px-2 rounded border text-[11px] font-medium shrink-0"
                                           >
                                             套用
                                           </button>
@@ -6248,7 +6933,7 @@
                                       </div>
 
                                       <div className="flex items-center justify-between pt-1.5 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                                        <span className="text-[10px] opacity-60">已即時自動存檔</span>
+                                        <span className="text-[11px] opacity-60">已即時自動存檔</span>
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -6269,7 +6954,7 @@
                                       ) : (
                                         <span className="opacity-50 italic flex items-center gap-1">
                                           <Icon name="edit" className="w-3 h-3" />
-                                          <span>點擊編輯筆記或設定 Hashtag...</span>
+                                          <span>點擊編輯筆記或設定標籤...</span>
                                         </span>
                                       )}
                                       <span className="opacity-50 shrink-0"><Icon name="edit" className="w-3 h-3" /></span>
@@ -6305,7 +6990,7 @@
                                       <span style={{ backgroundColor: cObj.hex }} className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" />
                                       <p className="font-semibold leading-snug flex-1 line-clamp-2">「{hl.quote}」</p>
                                       {childCount > 0 && (
-                                        <span className="text-[10px] opacity-60 shrink-0 mt-0.5" title={`${childCount} 則子標註`}>↳ {childCount}</span>
+                                        <span className="text-[11px] opacity-60 shrink-0 mt-0.5" title={`${childCount} 則子標註`}>↳ {childCount}</span>
                                       )}
                                     </div>
                                   )}
@@ -6317,19 +7002,27 @@
                       </div>
                     </div>
                   ) : (
-                    /* 問問 Gemini 分頁（固定鎖定 gemini-3.8-flash） */
+                    /* 問問 AI 分頁（使用者選擇的服務與模型） */
                     <>
                       <div className="px-3 py-2 border-b flex items-center justify-between gap-2 text-xs" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] opacity-70">鎖定模型：</span>
+                          <span className="text-[11px] opacity-70">目前使用：</span>
                           <span
                             style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', borderColor: 'var(--accent)' }}
                             className="px-2 py-0.5 rounded-md border text-[11px] font-mono font-semibold"
                           >
-                            {LOCKED_GEMINI_MODEL}
+                            {aiProvider.short} · {aiModel || '未選擇模型'}
                           </span>
+                          <button
+                            onClick={openAISettings}
+                            className="px-2 py-0.5 rounded-md border text-[11px] font-medium underline"
+                            style={{ borderColor: 'var(--border-color)' }}
+                            title="更換 AI 服務或模型"
+                          >
+                            更換
+                          </button>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className={`flex items-center gap-1.5 ${aiProvider.id === 'gemini' ? '' : 'hidden'}`}>
                           <Icon name="brain" className="w-3.5 h-3.5 opacity-70" />
                           <select
                             value={thinkingLevel}
@@ -6356,10 +7049,10 @@
                             className={`rounded-2xl p-3 space-y-2 ${msg.role === 'user' ? 'ml-6' : 'border mr-3'}`}
                           >
                             {msg.role === 'assistant' && (
-                              <div className="flex items-center justify-between text-[10px] pb-1 border-b opacity-75" style={{ borderColor: 'var(--border-color)' }}>
+                              <div className="flex items-center justify-between text-[11px] pb-1 border-b opacity-75" style={{ borderColor: 'var(--border-color)' }}>
                                 <span className="font-mono font-semibold flex items-center gap-1">
                                   <Icon name="sparkles" className="w-3 h-3" />
-                                  <span>{LOCKED_GEMINI_MODEL}</span>
+                                  <span>{msg.model || aiModel}</span>
                                 </span>
                                 <div className="flex items-center gap-2">
                                   <span>{msg.thinkingLabel}</span>
@@ -6391,7 +7084,7 @@
                             style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
                             className="rounded-2xl p-3 border mr-6 text-xs opacity-80"
                           >
-                            {LOCKED_GEMINI_MODEL} 正在結合上下文思考中...
+                            {aiModel} 正在結合上下文思考中...
                           </div>
                         )}
                         <div ref={chatEndRef} />
@@ -6404,7 +7097,7 @@
                             className="rounded-xl border p-2 text-xs flex items-start justify-between gap-2"
                           >
                             <div className="min-w-0">
-                              <div className="text-[10px] font-bold" style={{ color: 'var(--accent-text)' }}>
+                              <div className="text-[11px] font-bold" style={{ color: 'var(--accent-text)' }}>
                                 已引用詞句 (P.{quotedContext.pageNumber})
                               </div>
                               <p className="line-clamp-2 italic">「{quotedContext.quote}」</p>
@@ -6465,7 +7158,7 @@
                     className="rounded-xl border px-3 py-2 text-xs"
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-[10px] font-bold flex items-center gap-1" style={{ color: 'var(--warn)' }}>
+                      <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: 'var(--warn)' }}>
                         <Icon name="zap" className="w-3 h-3" />
                         <span>反白即翻（免金鑰字典）</span>
                       </span>
@@ -6511,7 +7204,7 @@
                       ))}
                     </select>
                     {selectionPopover.parentSource && (
-                      <span className="text-[10px] font-semibold shrink-0" style={{ color: 'var(--accent-text)' }}>
+                      <span className="text-[11px] font-semibold shrink-0" style={{ color: 'var(--accent-text)' }}>
                         {selectionPopover.parentSource === 'lock' ? '已鎖定' : '自動偵測'}
                       </span>
                     )}
@@ -6571,7 +7264,7 @@
                     className="rounded-xl border p-3 text-xs space-y-2 max-h-60 overflow-y-auto"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-subtle)' }}>
                         {selectionPopover.deepResult.detectedGenre}
                       </span>
                       <button onClick={() => handleAddHighlight('ochre', '語境深譯')} className="text-[11px] underline font-medium">
@@ -6588,56 +7281,248 @@
               </div>
             )}
 
-            {/* API 金鑰設定視窗（單一模型 gemini-3.8-flash ＋ 雙重永久儲存） */}
-            {showAccountModal && (
-              <div className="vv-fixed z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-                <div
-                  style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-                  className="w-full max-w-md rounded-2xl border p-5 shadow-2xl space-y-4"
-                >
-                  <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-                    <div>
-                      <h2 className="text-sm font-bold">Google Gemini API 金鑰設定</h2>
-                      <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        全面鎖定使用 <span className="font-mono font-semibold">{LOCKED_GEMINI_MODEL}</span>，設定一次即雙重永久保存於本機，不再重複詢問。
+            {/* AI 設定視窗：選擇 AI 服務 → 選擇模型（或手動輸入）→ 輸入金鑰。全部只存在這台裝置。 */}
+            {showAccountModal && aiDraft && (() => {
+              const dp = AI_PROVIDERS[aiDraft.provider] || AI_PROVIDERS.gemini;
+              const curModel = aiDraft.models[dp.id] || '';
+              const isPreset = dp.models.some((m) => m.id === curModel);
+              const keyTouched = Object.prototype.hasOwnProperty.call(aiDraft.keys, dp.id);
+              const keyDraft = keyTouched ? aiDraft.keys[dp.id] || '' : '';
+              const savedKey = aiKeys[dp.id] || '';
+              const effectiveKey = keyTouched ? keyDraft : savedKey; // 測試與儲存時實際使用的金鑰
+              const fieldStyle = { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' };
+              const closeModal = () => setShowAccountModal(false);
+              const runTest = async () => {
+                if (!sanitizeAIKey(effectiveKey)) { setAiTest({ state: 'error', msg: `請先輸入 ${dp.name} 的 API 金鑰` }); return; }
+                setAiTest({ state: 'testing', msg: '' });
+                try {
+                  await callAI({
+                    override: { provider: dp.id, model: curModel, key: effectiveKey },
+                    messages: [{ role: 'user', text: '請只回覆 OK 兩個字。' }],
+                    thinkingLevelObj: THINKING_LEVELS[0]
+                  });
+                  setAiTest({ state: 'ok', msg: `連線成功：${dp.short} · ${curModel} 可以使用` });
+                } catch (err) {
+                  setAiTest({ state: 'error', msg: err.message });
+                }
+              };
+              const saveDraft = async () => {
+                if (!String(curModel).trim()) {
+                  setAiTest({ state: 'error', msg: '請選擇模型，或在「手動輸入模型名稱」填入名稱' });
+                  return;
+                }
+                const cleanKeys = {};
+                AI_PROVIDER_ORDER.forEach((pid) => {
+                  cleanKeys[pid] = Object.prototype.hasOwnProperty.call(aiDraft.keys, pid) ? sanitizeAIKey(aiDraft.keys[pid] || '') : aiKeys[pid] || '';
+                });
+                const cleanModels = {};
+                AI_PROVIDER_ORDER.forEach((pid) => { cleanModels[pid] = String(aiDraft.models[pid] || '').trim(); });
+                await saveAISettingsPermanently({ provider: aiDraft.provider, models: cleanModels }, cleanKeys);
+                setShowAccountModal(false);
+                showToast(
+                  cleanKeys[aiDraft.provider]
+                    ? `已儲存：之後使用 ${dp.short} · ${cleanModels[aiDraft.provider]}`
+                    : `已儲存選擇（還沒輸入 ${dp.short} 的金鑰，AI 功能暫時無法使用）`
+                );
+              };
+              return (
+                <div className="vv-fixed z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" onClick={closeModal}>
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
+                    className="w-full max-w-md rounded-2xl border p-5 shadow-2xl space-y-4 max-h-full overflow-y-auto"
+                  >
+                    <div className="flex items-start justify-between border-b pb-3 gap-3" style={{ borderColor: 'var(--border-color)' }}>
+                      <div>
+                        <h2 className="text-sm font-bold">AI 設定</h2>
+                        <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                          選擇要用的 AI 服務與模型。金鑰只存在這台裝置上，只會傳送給您選擇的 AI 服務。
+                        </p>
+                      </div>
+                      <button onClick={closeModal} aria-label="關閉" className="p-1 opacity-70 hover:opacity-100 shrink-0">
+                        <Icon name="x" className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-semibold">1. AI 服務</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {AI_PROVIDER_ORDER.map((pid) => {
+                          const active = aiDraft.provider === pid;
+                          return (
+                            <button
+                              key={pid}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => {
+                                setAiDraft((d) => ({ ...d, provider: pid }));
+                                setAiTest({ state: 'idle', msg: '' });
+                              }}
+                              style={{
+                                backgroundColor: active ? 'var(--accent)' : 'var(--bg-subtle)',
+                                color: active ? '#fff' : 'var(--text-main)',
+                                borderColor: active ? 'var(--accent)' : 'var(--border-color)'
+                              }}
+                              className="py-2 px-2 rounded-xl border text-xs font-semibold transition leading-snug"
+                            >
+                              {AI_PROVIDERS[pid].short}
+                              <span className="block text-[11px] font-normal opacity-80">{pid === 'openai' ? 'ChatGPT' : pid === 'anthropic' ? 'Anthropic' : 'Google'}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-semibold">2. 模型（只顯示 {dp.short} 的模型）</div>
+                      <select
+                        value={isPreset ? curModel : '__custom__'}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setAiDraft((d) => ({ ...d, models: { ...d.models, [dp.id]: v === '__custom__' ? '' : v } }));
+                          setAiTest({ state: 'idle', msg: '' });
+                        }}
+                        style={fieldStyle}
+                        className="w-full px-3 py-2 rounded-xl border text-xs outline-none"
+                      >
+                        {dp.models.map((m) => (
+                          <option key={m.id} value={m.id}>{m.id}　（{m.tier}）</option>
+                        ))}
+                        <option value="__custom__">其他（手動輸入模型名稱）</option>
+                      </select>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>或手動輸入模型名稱（服務推出新模型時，直接貼上名稱即可使用）：</div>
+                      <input
+                        type="text"
+                        value={curModel}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setAiDraft((d) => ({ ...d, models: { ...d.models, [dp.id]: v } }));
+                          setAiTest({ state: 'idle', msg: '' });
+                        }}
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        placeholder={`例如：${dp.models[0].id}`}
+                        style={fieldStyle}
+                        className="w-full px-3 py-2 rounded-xl border text-xs outline-none font-mono"
+                      />
+                      <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                        不同模型的 API 價格差很多：「便宜」的模型適合日常問答與翻譯，「能力最強」的適合複雜推理，但費用較高。實際價格請看 {dp.short} 官網。
                       </p>
                     </div>
-                    <button onClick={() => setShowAccountModal(false)} className="p-1 opacity-70 hover:opacity-100">
-                      <Icon name="x" className="w-4 h-4" />
-                    </button>
-                  </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium">Google Gemini API Key</span>
-                      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="underline text-[11px]" style={{ color: 'var(--accent-text)' }}>
-                        前往 Google AI Studio 取得
-                      </a>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs gap-2">
+                        <span className="font-semibold">3. {dp.short} 的 API 金鑰</span>
+                        <a href={dp.keyUrl} target="_blank" rel="noreferrer" className="underline text-[11px]" style={{ color: 'var(--accent-text)' }}>
+                          {dp.keyLabel}
+                        </a>
+                      </div>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        value={keyDraft}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setAiDraft((d) => ({ ...d, keys: { ...d.keys, [dp.id]: v } }));
+                          setAiTest({ state: 'idle', msg: '' });
+                        }}
+                        placeholder={savedKey ? `已儲存（${maskAIKey(savedKey)}），要更換請直接貼上新的` : dp.keyPlaceholder}
+                        style={fieldStyle}
+                        className="w-full px-3 py-2 rounded-xl border text-xs outline-none font-mono"
+                      />
+                      <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <span>
+                          {keyTouched
+                            ? keyDraft
+                              ? `將儲存新的金鑰 ${maskAIKey(keyDraft)}`
+                              : '按「儲存設定」後會清除這把金鑰'
+                            : savedKey
+                            ? `使用已儲存的金鑰 ${maskAIKey(savedKey)}`
+                            : '尚未輸入金鑰'}
+                        </span>
+                        {(keyTouched ? keyDraft : savedKey) && (
+                          <button
+                            type="button"
+                            onClick={() => setAiDraft((d) => ({ ...d, keys: { ...d.keys, [dp.id]: '' } }))}
+                            style={{ color: 'var(--danger)' }}
+                            className="underline"
+                          >
+                            清除這把金鑰
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <input
-                      type="password"
-                      value={geminiKeyDraft}
-                      onChange={(e) => setGeminiKeyDraft(e.target.value)}
-                      placeholder="貼上 AIzaSy... 開頭的金鑰"
-                      style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                      className="w-full px-3 py-2.5 rounded-xl border text-xs outline-none font-mono"
-                    />
-                  </div>
 
-                  <div className="pt-2 border-t flex justify-end gap-2" style={{ borderColor: 'var(--border-color)' }}>
-                    <button onClick={() => setShowAccountModal(false)} className="px-3.5 py-2 rounded-xl text-xs opacity-75">
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={runTest}
+                        disabled={aiTest.state === 'testing'}
+                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                        className="w-full py-2 rounded-xl border text-xs font-semibold transition hover:opacity-90 disabled:opacity-50"
+                      >
+                        {aiTest.state === 'testing' ? '測試中...' : '測試連線（不會儲存）'}
+                      </button>
+                      {aiTest.state !== 'idle' && aiTest.state !== 'testing' && (
+                        <div
+                          role="status"
+                          style={{
+                            backgroundColor: aiTest.state === 'ok' ? 'var(--accent-soft)' : 'rgba(179, 98, 98, 0.14)',
+                            borderColor: aiTest.state === 'ok' ? 'var(--accent)' : 'var(--danger)'
+                          }}
+                          className="rounded-xl border px-3 py-2 text-xs leading-relaxed"
+                        >
+                          {aiTest.state === 'ok' ? '✓ ' : '✗ '}{aiTest.msg}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t flex justify-end gap-2" style={{ borderColor: 'var(--border-color)' }}>
+                      <button onClick={closeModal} className="px-3.5 py-2 rounded-xl text-xs opacity-80">
+                        取消
+                      </button>
+                      <button
+                        onClick={saveDraft}
+                        style={{ backgroundColor: 'var(--accent)' }}
+                        className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
+                      >
+                        儲存設定
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 通用確認視窗：刪除這類無法復原的動作先跳出確認 */}
+            {confirmDialog && (
+              <div className="vv-fixed z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setConfirmDialog(null)}>
+                <div
+                  role="alertdialog"
+                  aria-modal="true"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
+                  className="w-full max-w-sm rounded-2xl border p-5 shadow-2xl space-y-3"
+                >
+                  <h2 className="text-sm font-bold">{confirmDialog.title}</h2>
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>{confirmDialog.message}</p>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button autoFocus onClick={() => setConfirmDialog(null)} style={{ borderColor: 'var(--border-color)' }} className="px-4 py-2 rounded-xl border text-xs font-medium">
                       取消
                     </button>
                     <button
-                      onClick={async () => {
-                        await saveApiKeyPermanently(geminiKeyDraft);
-                        setShowAccountModal(false);
-                        showToast('API 金鑰已永久保存，之後開啟將自動生效！');
+                      onClick={() => {
+                        const fn = confirmDialog.onConfirm;
+                        setConfirmDialog(null);
+                        if (fn) fn();
                       }}
-                      style={{ backgroundColor: 'var(--accent)' }}
+                      style={{ backgroundColor: 'var(--danger)' }}
                       className="px-4 py-2 rounded-xl text-white text-xs font-semibold"
                     >
-                      永久儲存金鑰
+                      {confirmDialog.confirmLabel || '確定'}
                     </button>
                   </div>
                 </div>
@@ -6701,7 +7586,7 @@
             {toastMsg && (
               <div
                 style={{ backgroundColor: 'var(--accent)' }}
-                className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-white text-xs font-medium shadow-lg pointer-events-none"
+                className="absolute bottom-24 left-1/2 -translate-x-1/2 max-w-[calc(100%-2rem)] text-center z-50 px-4 py-2 rounded-2xl text-white text-xs font-medium shadow-lg pointer-events-none"
               >
                 {toastMsg}
               </div>
@@ -6726,8 +7611,6 @@
                 {/* 完整輸出第 1 頁至最後一頁純文字、底色劃記與行間筆記（無外框、無變暗） */}
                 <div>
                   {readingLines.map((line, idx) => {
-                    const prevLine = idx > 0 ? readingLines[idx - 1] : null;
-                    const showPageHeader = !prevLine || prevLine.pageNumber !== line.pageNumber;
                     const noteText =
                       (line.kind === 'block' && blockNotes[line.blockKey]
                         ? blockNotes[line.blockKey].map(([, v]) => (v || '').trim()).filter(Boolean).join('\n')
@@ -6735,23 +7618,6 @@
 
                     return (
                       <React.Fragment key={`print-${line.id}`}>
-                        {showPageHeader && (
-                          <div
-                            style={{
-                              marginTop: idx === 0 ? '4px' : '22px',
-                              marginBottom: '10px',
-                              paddingBottom: '4px',
-                              borderBottom: '1px solid #e2e8f0',
-                              fontSize: '9.5pt',
-                              fontWeight: 600,
-                              color: '#64748b'
-                            }}
-                            className="print-heading"
-                          >
-                            Page {line.pageNumber} / {docMeta.numPages}
-                          </div>
-                        )}
-
                         <div style={{ marginBottom: '10px' }}>
                           <p
                             style={{
