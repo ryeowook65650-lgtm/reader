@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <!-- 防快取標頭：確保每次修改 index.html 重整立即生效 -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
@@ -12,10 +12,14 @@
   <!-- Google Fonts: 護眼無襯線、襯線與等寬字體 -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@400;600;700&display=optional" rel="stylesheet" />
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // 只在「真的有 hover 的裝置」套用 hover 樣式：觸控裝置點一下後不會殘留 hover 變暗／變亮（那會造成畫面一閃一閃）
+    if (window.tailwind) { tailwind.config = { future: { hoverOnlyWhenSupported: true } }; }
+  </script>
 
   <!-- PDF.js 與 PDF-Lib CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -193,6 +197,32 @@
       * { transition-duration: 0.01ms !important; }
     }
 
+    /* ---- 平板／觸控適配 ---- */
+    html, body { height: 100%; max-width: 100%; overflow-x: hidden; overscroll-behavior: none; }
+    body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+    button, [role="switch"], select, input[type="range"], summary { touch-action: manipulation; }
+    /* 蓋住整個「可視區域」的彈層：螢幕鍵盤出現時跟著縮小，輸入框不會被遮住 */
+    .vv-fixed { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100dvh); }
+    /* 行間筆記按鈕：有 hover 的裝置才用 hover 顯示；觸控裝置永遠可見 */
+    @media (hover: hover) {
+      .note-btn-wrap { opacity: 0; transition: opacity 0.15s; }
+      .group:hover .note-btn-wrap, .note-btn-wrap:focus-within { opacity: 1; }
+    }
+    @media (hover: none) { .note-btn-wrap { opacity: 1; } }
+    /* 雙欄分隔線：畫面上的線固定 8px；觸控時可點擊區放大到 44px */
+    .split-divider::before {
+      content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 8px;
+      transform: translateX(-50%); background: var(--divider-bg, var(--border-color));
+    }
+    @media (pointer: coarse) {
+      button, [role="button"], [role="switch"], select, summary,
+      input[type="checkbox"], input[type="radio"], input[type="range"] { min-height: 44px; min-width: 44px; }
+      input[type="text"], input[type="password"], input:not([type]), textarea { min-height: 44px; }
+      /* 輸入框字級 16px 以上，iOS 才不會在點進去時自動放大畫面（那會讓版面亂跳） */
+      input[type="text"], input[type="password"], input:not([type]), textarea, select { font-size: 16px !important; }
+      .split-divider { width: 44px !important; margin-left: -18px; margin-right: -18px; }
+    }
+
     ::-webkit-scrollbar { width: 7px; height: 7px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
@@ -330,13 +360,17 @@
             role="switch"
             aria-checked={checked}
             onClick={() => onChange(!checked)}
-            style={{ backgroundColor: checked ? 'var(--accent)' : 'var(--border-color)' }}
-            className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none"
+            className="relative inline-flex h-11 w-14 shrink-0 items-center justify-center focus:outline-none"
           >
             <span
-              style={{ transform: checked ? 'translateX(17px)' : 'translateX(2px)' }}
-              className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-            />
+              style={{ backgroundColor: checked ? 'var(--accent)' : 'var(--border-color)' }}
+              className="relative inline-flex h-5 w-9 rounded-full transition-colors duration-200"
+            >
+              <span
+                style={{ transform: checked ? 'translateX(17px)' : 'translateX(2px)' }}
+                className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
+              />
+            </span>
           </button>
         </label>
       );
@@ -502,7 +536,8 @@
       wpm: 185,
       instantTranslate: true,
       filterHeaderFooter: true,
-      pdfContinuousScroll: true
+      pdfContinuousScroll: true,
+      adhdMode: false // ADHD 專注模式（逐句聚光燈）：預設關閉，顯示完整段落
     };
 
     const DEFAULT_WELCOME_MESSAGES = () => [
@@ -563,6 +598,69 @@
       return s === -1 ? null : { start: s, end: s + hl.quote.length };
     }
 
+    // 每個段落（區塊）的座標系：以 block.text.trim() 為準；句子起點用於把「句子內位置」換成「段落內位置」
+    function buildBlockIndex(pages) {
+      const out = {};
+      for (const page of pages || []) {
+        const pNum = page.pageNumber || 1;
+        (page.blocks || []).forEach((block, bIdx) => {
+          const raw = ((block && block.text) || '').trim();
+          if (!raw) return;
+          const isHeading = block.type === 'heading';
+          const sents = isHeading
+            ? [raw]
+            : Array.isArray(block.sentences) && block.sentences.length > 0
+            ? block.sentences
+            : splitParagraphIntoSentences(block.text);
+          let ok = raw === raw.replace(/\s+/g, ' '); // 含多餘空白／換行的區塊不做座標換算，退回舊規則
+          const starts = [];
+          if (ok) {
+            let cursor = 0;
+            for (const sent of sents) {
+              const i = raw.indexOf(sent, cursor);
+              if (i < 0) { ok = false; break; }
+              starts.push(i);
+              cursor = i + sent.length;
+            }
+          }
+          out[`p${pNum}-b${bIdx}`] = { text: raw, sents, sentStarts: ok ? starts : null, regular: ok };
+        });
+      }
+      return out;
+    }
+
+    // 把標註換算成「所在段落內的絕對範圍」；無法確定時回傳 null（退回舊規則）
+    function resolveHighlightRange(hl, blockIndex) {
+      const m = /^(p\d+-b\d+)-s(\d+)$/.exec((hl && hl.lineId) || '');
+      if (!m || !hl.quote) return null;
+      const bi = blockIndex[m[1]];
+      if (!bi || !bi.regular || !bi.sentStarts) return null;
+      const q = hl.quote;
+      const isBlockScope = hl.qScope === 'block';
+      const base = isBlockScope ? 0 : bi.sentStarts[Number(m[2])];
+      if (base === undefined) return null;
+      if (Number.isInteger(hl.qStart) && hl.qStart >= 0 && bi.text.slice(base + hl.qStart, base + hl.qStart + q.length) === q) {
+        return { blockKey: m[1], start: base + hl.qStart, end: base + hl.qStart + q.length };
+      }
+      let idx = bi.text.indexOf(q, base);
+      if (idx < 0) idx = bi.text.indexOf(q);
+      return idx < 0 ? null : { blockKey: m[1], start: idx, end: idx + q.length };
+    }
+
+    // 標註在「某一行」上的範圍（行可以是一句，也可以是整段；跨句的標註會被切成各句的片段）
+    function getLineHighlightRange(hl, line, resolved) {
+      if (resolved && resolved.blockKey === line.blockKey) {
+        if (!(line.blockStart >= 0)) return null;
+        const ls = line.blockStart;
+        const le = ls + line.text.length;
+        const s = Math.max(resolved.start, ls);
+        const e = Math.min(resolved.end, le);
+        return e > s ? { start: s - ls, end: e - ls } : null;
+      }
+      if (!highlightAppliesToLine(hl, line)) return null;
+      return getHighlightRangeInLine(hl, line);
+    }
+
     function highlightAppliesToLine(hl, line) {
       return !!hl.quote && (hl.lineId === line.id || (hl.quote.length >= 3 && line.text.includes(hl.quote)));
     }
@@ -593,11 +691,20 @@
     }
 
     // 依母子層級攤平成 [{hl, depth}]；order: 'array'（側欄原順序）| 'reading'（閱讀順序）
-    function buildHighlightTree(hls, order) {
+    function buildHighlightTree(hls, order, keyOf) {
       const ids = new Set(hls.map((h) => h.id));
       const childrenOf = {};
       const roots = [];
-      const sorted = order === 'reading' ? [...hls].sort(compareHighlightReadingOrder) : hls;
+      const cmpKeys = (a, b) => {
+        const ka = keyOf(a);
+        const kb = keyOf(b);
+        for (let i = 0; i < Math.max(ka.length, kb.length); i++) {
+          const d = (ka[i] || 0) - (kb[i] || 0);
+          if (d) return d;
+        }
+        return 0;
+      };
+      const sorted = order === 'reading' ? [...hls].sort(keyOf ? cmpKeys : compareHighlightReadingOrder) : hls;
       sorted.forEach((h) => {
         if (h.parentId && h.parentId !== h.id && ids.has(h.parentId)) {
           if (!childrenOf[h.parentId]) childrenOf[h.parentId] = [];
@@ -640,8 +747,25 @@
     }
 
     // 在同一行內，找出「完全包住」所選文字的最內層既有標註，作為預選母標註
-    function detectParentHighlightId(line, hls, quote, selStart, selEnd, depthById) {
+    function detectParentHighlightId(line, hls, quote, selStart, selEnd, depthById, resolvedById) {
       if (!line || !quote) return '';
+      if (resolvedById && line.blockStart >= 0 && Number.isInteger(selStart) && selStart >= 0 && Number.isInteger(selEnd) && selEnd > selStart) {
+        const s0 = line.blockStart + selStart;
+        const e0 = line.blockStart + selEnd;
+        let bestH = null;
+        let bestL = Infinity;
+        let bestD = -1;
+        for (const h of hls) {
+          const r = resolvedById[h.id];
+          if (!r || r.blockKey !== line.blockKey) continue;
+          if (r.start <= s0 && r.end >= e0 && r.end - r.start > e0 - s0) {
+            const len = r.end - r.start;
+            const d = (depthById && depthById[h.id]) || 0;
+            if (len < bestL || (len === bestL && d > bestD)) { bestH = h; bestL = len; bestD = d; }
+          }
+        }
+        return bestH ? bestH.id : '';
+      }
       let s = selStart;
       let e = selEnd;
       if (!(Number.isInteger(s) && s >= 0 && Number.isInteger(e) && e > s)) {
@@ -710,8 +834,8 @@
       return t.length > n ? `${t.slice(0, n)}…` : t;
     }
 
-    function buildArchitecturePromptText({ title, numPages, highlights, inlineNotes, colors }) {
-      const tree = buildHighlightTree(highlights, 'reading');
+    function buildArchitecturePromptText({ title, numPages, highlights, inlineNotes, colors, orderKeyById }) {
+      const tree = buildHighlightTree(highlights, 'reading', orderKeyById ? (h) => orderKeyById[h.id] || [h.pageNumber || 0, 1e6 + (h.lineIndex || 0), h.qStart || 0] : null);
       const colorName = (id) => ((colors || []).find((c) => c.id === id) || (colors || [])[0] || { name: '' }).name;
       const usedInline = new Set();
       const counters = [];
@@ -942,7 +1066,7 @@
       return { error: occ.length === 0 ? 'notfound' : 'ambiguous' };
     }
 
-    async function computeHighlightSyncRects(pdfDoc, highlights, lineById, numPages, onProgress) {
+    async function computeHighlightSyncRects(pdfDoc, highlights, getAnchor, numPages, onProgress) {
       const dataCache = new Map();
       const streamCache = new Map();
       const getData = async (p) => {
@@ -968,9 +1092,11 @@
       const failed = [];
       let ok = 0;
       for (let n = 0; n < highlights.length; n++) {
-        const hl = highlights[n];
+        const hl0 = highlights[n];
         if (onProgress) onProgress(n + 1, highlights.length);
-        const line = lineById[hl.lineId] || null;
+        const anchor = getAnchor(hl0) || { line: null, hl: hl0 };
+        const line = anchor.line;
+        const hl = { ...anchor.hl, id: hl0.id, pageNumber: hl0.pageNumber, colorId: hl0.colorId };
         const base = Math.min(numPages, Math.max(1, hl.pageNumber || (line && line.pageNumber) || 1));
         const attempts = [[base], [base, base + 1], [base - 1, base], [base + 1], [base - 1]];
         let found = null;
@@ -2114,6 +2240,210 @@
     });
 
     // =========================================================================
+    // 5b. 閱讀行元件（React.memo：只有「這一行」的資料變動才會重繪）
+    //     打字、自動播放進度、側欄操作都不再牽動整份文獻的上千行重繪
+    // =========================================================================
+    const ReadingLineItem = React.memo(function ReadingLineItem(props) {
+      const {
+        line, idx, isActive, isPulsing, showPageDivider, numPages, nodes, adhdOn,
+        inactiveOpacity, fontSize, lineHeight, letterSpacing, noteVal, isEditingInline,
+        blockNotes, editingKey, showProgress, progressRef, handlers: H
+      } = props;
+
+      const isBlock = line.kind === 'block';
+      const activeEditKey = isBlock ? editingKey : isEditingInline ? line.id : null;
+
+      // 這一行底下要顯示的行間筆記（段落模式會把同段各句的舊筆記一併顯示，切換模式不遺失）
+      let entries = [];
+      if (isBlock) {
+        entries = (blockNotes || []).map(([k, v, s]) => ({ key: k, value: v, sIdx: s }));
+        if (activeEditKey && !entries.some((e) => e.key === activeEditKey)) {
+          const m = /-s(\d+)$/.exec(activeEditKey);
+          entries = [...entries, { key: activeEditKey, value: '', sIdx: m ? Number(m[1]) : 0 }];
+        }
+      } else if (noteVal.trim() || isEditingInline) {
+        entries = [{ key: line.id, value: noteVal, sIdx: line.sIdx || 0 }];
+      }
+      const hasOwnNote = entries.some((e) => e.key === line.id && e.value.trim());
+
+      const rootStyle = adhdOn
+        ? {
+            opacity: isActive ? 1 : inactiveOpacity,
+            backgroundColor: isActive ? 'var(--bg-active-card)' : 'transparent',
+            borderColor: isActive ? 'var(--border-color)' : 'transparent'
+          }
+        : { opacity: 1, backgroundColor: 'transparent', borderColor: 'transparent' };
+
+      return (
+        <>
+          {showPageDivider && (
+            <div className="pt-5 pb-2 flex items-center gap-3 select-none">
+              <button
+                onClick={() => H.onPageDivider(line.pageNumber)}
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border hover:opacity-100"
+              >
+                Page {line.pageNumber} / {numPages}
+              </button>
+              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+            </div>
+          )}
+
+          <div
+            ref={(el) => H.registerLineRef(idx, el)}
+            data-line-idx={idx}
+            onClick={() => H.onLineClick(idx)}
+            onMouseUp={(e) => H.onLineMouseUp(e, line, idx)}
+            onPointerDown={(e) => H.onLinePointerDown(e, line, idx)}
+            onPointerUp={H.onLinePointerUp}
+            onPointerCancel={H.onLinePointerUp}
+            style={{
+              ...rootStyle,
+              fontSize: line.type === 'heading' ? `${Math.round(fontSize * 1.22)}px` : `${fontSize}px`,
+              lineHeight,
+              letterSpacing: `${letterSpacing}em`
+            }}
+            className={`group relative rounded-2xl px-4 sm:px-5 border ${
+              adhdOn ? 'py-3 transition-all duration-200 cursor-pointer' : 'py-2'
+            } ${adhdOn && isActive ? 'shadow-md' : adhdOn ? 'hover:opacity-75' : ''} ${
+              line.type === 'heading' ? 'font-bold mt-3' : ''
+            } ${isPulsing ? 'pulse-target' : ''}`}
+          >
+            {adhdOn && isActive && (
+              <span style={{ backgroundColor: 'var(--accent)' }} className="absolute left-1.5 top-3 bottom-3 w-1 rounded-full" />
+            )}
+
+            <div data-line-text="1">{nodes ?? line.text}</div>
+
+            {/* 行間即時筆記按鈕：滑鼠裝置 hover 才出現；觸控裝置永遠顯示 */}
+            <div className="note-btn-wrap absolute right-3 top-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  H.onToggleNote(line.id);
+                }}
+                style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                className="px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 shadow-sm"
+              >
+                <Icon name="note" className="w-3 h-3 text-amber-500" />
+                <span>{hasOwnNote ? '編輯筆記' : '+ 筆記'}</span>
+              </button>
+            </div>
+
+            {/* 行間即時筆記（即時自動存檔 + 點擊完成收合） */}
+            {entries.map((entry) => {
+              const editing = activeEditKey === entry.key;
+              const hasNote = Boolean(entry.value.trim());
+              return (
+                <div
+                  key={entry.key}
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseUp={(e) => e.stopPropagation()}
+                  style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--accent)', fontSize: 12, lineHeight: 1.5, letterSpacing: 0 }}
+                  className="mt-3 p-3 rounded-xl border border-l-4 text-xs space-y-2 cursor-auto"
+                >
+                  <div className="flex items-center justify-between text-[11px] font-semibold" style={{ color: 'var(--accent-text)' }}>
+                    <span className="flex items-center gap-1">
+                      <Icon name="note" className="w-3 h-3" />
+                      <span>
+                        {isBlock && entry.key !== line.id ? `第 ${entry.sIdx + 1} 句的筆記（自動保存）` : '行間即時筆記（自動保存）'}
+                      </span>
+                    </span>
+                    {editing ? (
+                      <div className="flex items-center gap-2">
+                        {hasNote && (
+                          <button type="button" onClick={() => H.onNoteClear(entry.key)} style={{ color: 'var(--danger)' }} className="hover:underline">
+                            清空
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={H.onNoteDone}
+                          style={{ backgroundColor: 'var(--accent)' }}
+                          className="px-2.5 py-0.5 rounded-md text-white font-semibold"
+                        >
+                          完成
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => H.onNoteEdit(entry.key)} className="hover:underline flex items-center gap-0.5">
+                        <Icon name="edit" className="w-3 h-3" />
+                        <span>編輯</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {editing ? (
+                    <textarea
+                      value={entry.value}
+                      autoFocus
+                      rows={2}
+                      placeholder="輸入您對本句的想法或補充（即時自動儲存，點右上角「完成」收合）..."
+                      onChange={(e) => H.onNoteChange(entry.key, e.target.value)}
+                      style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
+                      className="w-full p-2.5 rounded-lg border text-xs outline-none resize-none"
+                    />
+                  ) : (
+                    <div onClick={() => H.onNoteEdit(entry.key)} className="leading-relaxed opacity-90 whitespace-pre-wrap">
+                      {entry.value}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {showProgress && (
+              <div className="mt-2.5 h-1 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                <div ref={progressRef} style={{ width: '0%', backgroundColor: 'var(--accent)' }} className="h-full" />
+              </div>
+            )}
+          </div>
+        </>
+      );
+    });
+
+    const ReadingLinesList = React.memo(function ReadingLinesList(props) {
+      const {
+        lines, activeLineIdx, pulseLineId, isAutoPlaying, adhdOn, fontSize, lineHeight, letterSpacing,
+        dimIntensity, numPages, lineNodes, inlineNotes, blockNotes, editingInlineLineId, progressRef, handlers
+      } = props;
+      const inactiveOpacity = adhdOn ? Math.max(0.08, 1 - dimIntensity / 100) : 1;
+      return (
+        <div className="space-y-3">
+          {lines.map((line, idx) => {
+            const prev = idx > 0 ? lines[idx - 1] : null;
+            const isBlock = line.kind === 'block';
+            return (
+              <ReadingLineItem
+                key={line.id}
+                line={line}
+                idx={idx}
+                isActive={idx === activeLineIdx}
+                isPulsing={pulseLineId === line.id}
+                showPageDivider={!prev || prev.pageNumber !== line.pageNumber}
+                numPages={numPages}
+                nodes={lineNodes[line.id]}
+                adhdOn={adhdOn}
+                inactiveOpacity={inactiveOpacity}
+                fontSize={fontSize}
+                lineHeight={lineHeight}
+                letterSpacing={letterSpacing}
+                noteVal={isBlock ? '' : inlineNotes[line.id] || ''}
+                isEditingInline={!isBlock && editingInlineLineId === line.id}
+                blockNotes={isBlock ? blockNotes[line.blockKey] : undefined}
+                editingKey={isBlock && editingInlineLineId && editingInlineLineId.startsWith(`${line.blockKey}-s`) ? editingInlineLineId : null}
+                showProgress={adhdOn && isAutoPlaying && idx === activeLineIdx}
+                progressRef={progressRef}
+                handlers={handlers}
+              />
+            );
+          })}
+        </div>
+      );
+    });
+
+    // =========================================================================
     // 6. 主應用程式組件 App
     // =========================================================================
     function App() {
@@ -2187,7 +2517,7 @@
       // ADHD 聚光燈與自動播放
       const [activeLineIdx, setActiveLineIdx] = useState(initialSession.activeLineIdx || 0);
       const [isAutoPlaying, setIsAutoPlaying] = useState(false);
-      const [autoPlayProgress, setAutoPlayProgress] = useState(0);
+      const [printMode, setPrintMode] = useState(false); // 只有列印時才渲染整份純文字列印層
       const [pulseLineId, setPulseLineId] = useState(null);
 
       // 行間即時筆記與重點標註（即時自動存檔 + 點擊完成收合）
@@ -2253,9 +2583,25 @@
       const subParentLockRef = useRef(null);
       const persistTimerRef = useRef(null);
       const persistFnRef = useRef(null);
+      const progressBarRef = useRef(null);       // 自動播放進度條：直接改 DOM，不觸發整頁重繪
+      const tapSelectRef = useRef(false);        // 這次 activeLine 變動是否來自「點擊文字」
+      const pendingActiveBlockRef = useRef(null); // 切換 ADHD 模式時，記住目前所在段落
+      const lineHandlersRef = useRef({});
+      const resolvedRef = useRef({});
+      const blockNotesPrevRef = useRef({});
+      const readingLinesRef = useRef([]);
+      const selectionPopoverRef = useRef(null);
+      const splitMovedRef = useRef(false);
+      const renameBtnRef = useRef(false);
 
       const currentTheme = THEMES[settings.theme] || THEMES.slate;
       const hasActiveApiKey = Boolean(geminiApiKey.trim());
+      const adhdOn = settings.adhdMode === true;
+      const isCoarse = useMemo(
+        () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches,
+        []
+      );
+      const [keyboardOpen, setKeyboardOpen] = useState(false);
 
       const showToast = useCallback((msg) => {
         setToastMsg(msg);
@@ -2267,6 +2613,74 @@
       useEffect(() => {
         requestStoragePersistence();
       }, []);
+
+      // 外殼高度＝目前「看得到的區域」（visualViewport）：螢幕鍵盤出現時，整個畫面縮到鍵盤上方，
+      // 文字區、側欄、輸入框都在鍵盤之上，iOS 也不會把整頁往上推而露出空白
+      useEffect(() => {
+        const vv = window.visualViewport;
+        const root = document.documentElement;
+        let raf = 0;
+        const apply = () => {
+          raf = 0;
+          const zoomed = !!vv && vv.scale > 1.02;
+          const h = vv && !zoomed ? vv.height : window.innerHeight;
+          const top = vv && !zoomed ? vv.offsetTop : 0;
+          root.style.setProperty('--app-h', `${Math.round(h)}px`);
+          root.style.setProperty('--app-top', `${Math.round(top)}px`);
+          setKeyboardOpen(!!vv && !zoomed && window.innerHeight - vv.height > 140);
+        };
+        const schedule = () => { if (!raf) raf = requestAnimationFrame(apply); };
+        apply();
+        if (vv) {
+          vv.addEventListener('resize', schedule);
+          vv.addEventListener('scroll', schedule);
+        }
+        window.addEventListener('resize', schedule);
+        window.addEventListener('orientationchange', schedule);
+        return () => {
+          if (raf) cancelAnimationFrame(raf);
+          if (vv) {
+            vv.removeEventListener('resize', schedule);
+            vv.removeEventListener('scroll', schedule);
+          }
+          window.removeEventListener('resize', schedule);
+          window.removeEventListener('orientationchange', schedule);
+        };
+      }, []);
+
+      // 觸控裝置：點進輸入框後，若被螢幕鍵盤遮住，才把它捲到可視範圍中央（已看得到就完全不動）
+      useEffect(() => {
+        if (!isCoarse) return undefined;
+        let t = 0;
+        const reveal = (el) => {
+          if (!el || !el.getBoundingClientRect || !document.contains(el)) return;
+          const vv = window.visualViewport;
+          const top = vv ? vv.offsetTop : 0;
+          const h = vv ? vv.height : window.innerHeight;
+          const r = el.getBoundingClientRect();
+          if (r.top < top + 8 || r.bottom > top + h - 8) el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+        };
+        const onFocusIn = (e) => {
+          const el = e.target;
+          if (!el || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+          clearTimeout(t);
+          t = setTimeout(() => reveal(el), 320);
+        };
+        const onVvResize = () => {
+          const el = document.activeElement;
+          if (el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) {
+            clearTimeout(t);
+            t = setTimeout(() => reveal(el), 120);
+          }
+        };
+        document.addEventListener('focusin', onFocusIn);
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', onVvResize);
+        return () => {
+          clearTimeout(t);
+          document.removeEventListener('focusin', onFocusIn);
+          if (window.visualViewport) window.visualViewport.removeEventListener('resize', onVvResize);
+        };
+      }, [isCoarse]);
 
       useEffect(() => {
         document.body.className = currentTheme.className;
@@ -2307,40 +2721,78 @@
         await idbSetScopedKV(currentOwnerUid, 'geminiApiKey', clean);
       }, []);
 
-      // 多頁文字轉換為聚光燈逐句／逐段陣列
+      // 每個段落的座標系（供標註在「逐句」與「完整段落」兩種顯示間無縫對應）
+      const blockIndex = useMemo(() => buildBlockIndex(docPages), [docPages]);
+
+      // 多頁文字轉換為閱讀行陣列：
+      //   ADHD 關閉（預設）→ 每個段落一行（原本完整的段落格式）
+      //   ADHD 開啟       → 依「逐句／逐段」設定切成聚光燈行（原本的行為）
       const readingLines = useMemo(() => {
         const result = [];
+        const asBlocks = !adhdOn || settings.granularity === 'paragraph';
         for (const page of docPages || []) {
           const pNum = page.pageNumber || 1;
           (page.blocks || []).forEach((block, bIdx) => {
             if (!block?.text?.trim()) return;
-            if (block.type === 'heading' || settings.granularity === 'paragraph') {
+            const blockKey = `p${pNum}-b${bIdx}`;
+            const bi = blockIndex[blockKey];
+            if (block.type === 'heading' || asBlocks) {
               result.push({
-                id: `p${pNum}-b${bIdx}-s0`,
+                id: `${blockKey}-s0`,
                 pageNumber: pNum,
                 type: block.type || 'paragraph',
                 text: block.text.trim(),
-                paragraphContext: block.text.trim()
+                paragraphContext: block.text.trim(),
+                kind: 'block',
+                blockKey,
+                blockStart: 0,
+                sIdx: 0
               });
             } else {
               const sentences =
-                Array.isArray(block.sentences) && block.sentences.length > 0
+                bi && bi.sents
+                  ? bi.sents
+                  : Array.isArray(block.sentences) && block.sentences.length > 0
                   ? block.sentences
                   : splitParagraphIntoSentences(block.text);
               sentences.forEach((sent, sIdx) => {
                 result.push({
-                  id: `p${pNum}-b${bIdx}-s${sIdx}`,
+                  id: `${blockKey}-s${sIdx}`,
                   pageNumber: (block.sentencePages && block.sentencePages[sIdx]) || pNum,
                   type: block.type || 'paragraph',
                   text: sent,
-                  paragraphContext: block.text.trim()
+                  paragraphContext: block.text.trim(),
+                  kind: 'sentence',
+                  blockKey,
+                  blockStart: bi && bi.sentStarts ? bi.sentStarts[sIdx] : -1,
+                  sIdx
                 });
               });
             }
           });
         }
         return result;
-      }, [docPages, settings.granularity]);
+      }, [docPages, settings.granularity, adhdOn, blockIndex]);
+
+      // 依「段落」分組的行間筆記（段落模式用；以前後內容相同時沿用同一個陣列，避免無謂重繪）
+      const blockNotes = useMemo(() => {
+        const next = {};
+        Object.keys(inlineNotes).forEach((k) => {
+          const m = /^(p\d+-b\d+)-s(\d+)$/.exec(k);
+          if (!m || !inlineNotes[k]) return;
+          if (!next[m[1]]) next[m[1]] = [];
+          next[m[1]].push([k, inlineNotes[k], Number(m[2])]);
+        });
+        const prev = blockNotesPrevRef.current;
+        Object.keys(next).forEach((bk) => {
+          next[bk].sort((x, y) => x[2] - y[2]);
+          const a2 = prev[bk];
+          const b2 = next[bk];
+          if (a2 && a2.length === b2.length && a2.every((x, i) => x[0] === b2[i][0] && x[1] === b2[i][1])) next[bk] = a2;
+        });
+        blockNotesPrevRef.current = next;
+        return next;
+      }, [inlineNotes]);
 
       useEffect(() => {
         if (readingLines.length > 0 && activeLineIdx >= readingLines.length) {
@@ -2409,14 +2861,38 @@
         }
         const currentLine = readingLines[activeLineIdx];
         if (!currentLine) return;
+        const fromTap = tapSelectRef.current;
+        tapSelectRef.current = false;
         const el = lineRefs.current[activeLineIdx];
-        if (el && viewMode !== 'pdf') {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 只有 ADHD 專注模式才會把目前行捲到中央；點擊已經在畫面內的文字時不捲動（觸控時畫面不會被推著跑）
+        if (adhdOn && el && viewMode !== 'pdf') {
+          let alreadyVisible = false;
+          const box = leftScrollRef.current;
+          if (fromTap && box) {
+            const a = el.getBoundingClientRect();
+            const c = box.getBoundingClientRect();
+            alreadyVisible = a.top >= c.top + 24 && a.bottom <= c.bottom - 24;
+          }
+          if (!alreadyVisible) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         if (viewMode === 'split' && currentLine.pageNumber && currentLine.pageNumber !== currentPdfPage) {
           jumpToPdfPage(currentLine.pageNumber, true);
         }
-      }, [activeLineIdx, readingLines, viewMode]);
+      }, [activeLineIdx, readingLines, viewMode, adhdOn]);
+
+      // 切換 ADHD 模式後，維持在同一個段落（內容高度大幅改變，不讓閱讀位置跑掉）
+      useEffect(() => {
+        const bk = pendingActiveBlockRef.current;
+        if (!bk) return;
+        pendingActiveBlockRef.current = null;
+        const idx = readingLines.findIndex((l) => l.blockKey === bk);
+        if (idx < 0) return;
+        setActiveLineIdx(idx);
+        requestAnimationFrame(() => {
+          const el = lineRefs.current[idx];
+          if (el) el.scrollIntoView({ block: 'center', behavior: 'auto' });
+        });
+      }, [readingLines]);
 
       useEffect(() => {
         if (showRightSidebar && sidebarTab === 'ai') {
@@ -2684,6 +3160,7 @@
           }
 
           if (isTyping) return;
+          if (!adhdOn && e.key !== 'Escape') return;
 
           if (e.key === 'ArrowDown' || e.key === 'j') {
             if (readingLines.length === 0) return;
@@ -2708,12 +3185,12 @@
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-      }, [readingLines.length, viewMode, undoStack.length, handleUndoPdfAnnotation]);
+      }, [readingLines.length, viewMode, undoStack.length, handleUndoPdfAnnotation, adhdOn]);
 
       // 自動換行閱讀進度計時器
       useEffect(() => {
-        if (!isAutoPlaying || readingLines.length === 0) {
-          setAutoPlayProgress(0);
+        if (!adhdOn || !isAutoPlaying || readingLines.length === 0) {
+          if (progressBarRef.current) progressBarRef.current.style.width = '0%';
           return;
         }
         const currentLine = readingLines[activeLineIdx];
@@ -2728,7 +3205,7 @@
         let rafId;
         const tick = (now) => {
           const elapsed = now - startTime;
-          setAutoPlayProgress(Math.min(100, (elapsed / durationMs) * 100));
+          if (progressBarRef.current) progressBarRef.current.style.width = `${Math.min(100, (elapsed / durationMs) * 100)}%`;
           if (elapsed >= durationMs) {
             if (activeLineIdx < readingLines.length - 1) {
               setActiveLineIdx((i) => i + 1);
@@ -2742,7 +3219,7 @@
         };
         rafId = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(rafId);
-      }, [isAutoPlaying, activeLineIdx, readingLines, settings.wpm, showToast]);
+      }, [adhdOn, isAutoPlaying, activeLineIdx, readingLines, settings.wpm, showToast]);
 
       // =======================================================================
       // 雙欄對照：中間分隔線滑鼠／觸控手動拖曳寬度 (20% ~ 80%)
@@ -2750,15 +3227,19 @@
       const handleSplitDividerPointerDown = (e) => {
         e.preventDefault();
         setIsDraggingSplit(true);
+        splitMovedRef.current = false;
+        const startX = e.clientX;
 
         const onMove = (moveEvt) => {
           const container = workspaceRef.current;
           if (!container) return;
+          if (Math.abs((moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX) - startX) > 4) splitMovedRef.current = true;
           const rect = container.getBoundingClientRect();
           const clientX = moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX;
           // 扣除右側邊欄寬度（若開啟）
           const sidebarEl = container.querySelector('.right-sidebar-panel');
-          const availWidth = rect.width - (sidebarEl ? sidebarEl.getBoundingClientRect().width : 0);
+          const sidebarDocked = sidebarEl && window.getComputedStyle(sidebarEl).position !== 'absolute';
+          const availWidth = rect.width - (sidebarDocked ? sidebarEl.getBoundingClientRect().width : 0);
           if (availWidth <= 200) return;
           const pct = ((clientX - rect.left) / availWidth) * 100;
           const clamped = Math.min(80, Math.max(20, Math.round(pct * 10) / 10));
@@ -2975,11 +3456,25 @@
         try {
           const lineById = {};
           readingLines.forEach((l) => { lineById[l.id] = l; });
+          const getAnchor = (hl) => {
+            const r = resolvedById[hl.id];
+            const bi = r && blockIndex[r.blockKey];
+            if (r && bi && bi.sentStarts) {
+              const si = bi.sentStarts.findIndex((st, i) => r.start >= st && r.end <= st + bi.sents[i].length);
+              if (si >= 0) {
+                const id = `${r.blockKey}-s${si}`;
+                return { line: { id, text: bi.sents[si] }, hl: { ...hl, lineId: id, qStart: r.start - bi.sentStarts[si], qScope: undefined } };
+              }
+              const id = `${r.blockKey}-s0`;
+              return { line: { id, text: bi.text }, hl: { ...hl, lineId: id, qStart: r.start, qScope: 'block' } };
+            }
+            return { line: lineById[hl.lineId] || null, hl };
+          };
           const total = docMeta.numPages || pdfDocInstance.numPages || 1;
           const { annotations, failed, ok } = await computeHighlightSyncRects(
             pdfDocInstance,
             textHighlights,
-            lineById,
+            getAnchor,
             total,
             (n, all) => {
               if (all > 12 && (n === 1 || n % 10 === 0)) showToast(`比對重點位置中 (${n} / ${all})...`);
@@ -3026,8 +3521,26 @@
       // 匯出「純文字 PDF（完整多頁無外框）」
       const handlePrintCleanTextPdf = () => {
         if (!activeDocId) return;
+        const flush = ReactDOM.flushSync || ((fn) => fn());
+        flush(() => setPrintMode(true));
         window.print();
+        setTimeout(() => setPrintMode(false), 800);
       };
+
+      // 瀏覽器選單／快捷鍵列印（Ctrl+P）也要先把列印層渲染出來；平常不渲染，避免每次打字都重繪整份文獻
+      useEffect(() => {
+        const before = () => {
+          const flush = ReactDOM.flushSync || ((fn) => fn());
+          flush(() => setPrintMode(true));
+        };
+        const after = () => setPrintMode(false);
+        window.addEventListener('beforeprint', before);
+        window.addEventListener('afterprint', after);
+        return () => {
+          window.removeEventListener('beforeprint', before);
+          window.removeEventListener('afterprint', after);
+        };
+      }, []);
 
       // =======================================================================
       // 匯入 PDF、資料夾管理與備份還原
@@ -3317,8 +3830,12 @@
       const openSelectionMenu = useCallback(({ quote, lineObj, lineIndex, clientX, clientY, selStart = -1, selEnd = -1 }) => {
         const cleaned = (quote || '').trim();
         if (!cleaned) return;
+        const curPop = selectionPopoverRef.current;
+        if (curPop && curPop.quote === cleaned && curPop.lineId === (lineObj?.id || '')) return;
         setIsAutoPlaying(false);
+        tapSelectRef.current = true; // 選字的那一行一定在畫面內，不要為了「置中」而捲動
         if (typeof lineIndex === 'number') setActiveLineIdx(lineIndex);
+        setTimeout(() => { tapSelectRef.current = false; }, 400);
 
         const safeX = Math.min(window.innerWidth - 195, Math.max(195, clientX));
         const placeBelow = clientY < 240;
@@ -3337,7 +3854,7 @@
           parentId = lockId;
           parentSource = 'lock';
         } else if (lineObj && hlsNow.length > 0) {
-          const det = detectParentHighlightId(lineObj, hlsNow, cleaned, selStart, selEnd, computeHighlightDepths(hlsNow));
+          const det = detectParentHighlightId(lineObj, hlsNow, cleaned, selStart, selEnd, computeHighlightDepths(hlsNow), resolvedRef.current);
           if (det) {
             parentId = det;
             parentSource = 'auto';
@@ -3351,6 +3868,7 @@
           pageNumber: lineObj?.pageNumber || currentPdfPage || 1,
           paragraphContext: lineObj?.paragraphContext || cleaned,
           selStart: Number.isInteger(selStart) && selStart >= 0 ? selStart : -1,
+          lineKind: (lineObj && lineObj.kind) || 'sentence',
           parentId,
           parentSource,
           x: safeX,
@@ -3372,43 +3890,46 @@
         }
       }, [activeLineIdx, currentPdfPage, settings.instantTranslate, triggerQuickInstantTranslate]);
 
+      // 依目前的文字選取開啟選字彈窗（滑鼠放開、長按、觸控調整選取柄後都走這裡）
+      const openMenuFromSelection = (lineObj, idx, hostEl, fallbackX, fallbackY) => {
+        const sel = window.getSelection();
+        const selectedStr = sel ? sel.toString().trim() : '';
+        if (selectedStr.length < 1) return false;
+        const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+        const rect = range ? range.getBoundingClientRect() : null;
+        // 取得所選文字在這一行內的字元位置（供母子標註與重複詞精準定位）
+        let selStart = -1;
+        let selEnd = -1;
+        try {
+          if (hostEl && range && hostEl.contains(range.startContainer) && hostEl.contains(range.endContainer)) {
+            const pre = document.createRange();
+            pre.selectNodeContents(hostEl);
+            pre.setEnd(range.startContainer, range.startOffset);
+            const raw = range.toString();
+            const lead = raw.length - raw.trimStart().length;
+            selStart = pre.toString().length + lead;
+            selEnd = selStart + selectedStr.length;
+          }
+        } catch {}
+        openSelectionMenu({
+          quote: selectedStr,
+          lineObj,
+          lineIndex: idx,
+          selStart,
+          selEnd,
+          clientX: rect ? rect.left + rect.width / 2 : fallbackX,
+          clientY: rect ? (rect.top < 240 ? rect.bottom : rect.top) : fallbackY
+        });
+        return true;
+      };
+
       const handleLineMouseUp = (e, lineObj, idx) => {
         if (longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
         }
-        const sel = window.getSelection();
-        const selectedStr = sel ? sel.toString().trim() : '';
-        if (selectedStr.length >= 1) {
-          const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-          const rect = range ? range.getBoundingClientRect() : null;
-          // 取得所選文字在這一行內的字元位置（供母子標註與重複詞精準定位）
-          let selStart = -1;
-          let selEnd = -1;
-          try {
-            const host = e.currentTarget && e.currentTarget.querySelector
-              ? e.currentTarget.querySelector('[data-line-text]')
-              : null;
-            if (host && range && host.contains(range.startContainer) && host.contains(range.endContainer)) {
-              const pre = document.createRange();
-              pre.selectNodeContents(host);
-              pre.setEnd(range.startContainer, range.startOffset);
-              const raw = range.toString();
-              const lead = raw.length - raw.trimStart().length;
-              selStart = pre.toString().length + lead;
-              selEnd = selStart + selectedStr.length;
-            }
-          } catch {}
-          openSelectionMenu({
-            quote: selectedStr,
-            lineObj,
-            lineIndex: idx,
-            selStart,
-            selEnd,
-            clientX: rect ? rect.left + rect.width / 2 : e.clientX,
-            clientY: rect ? (rect.top < 240 ? rect.bottom : rect.top) : e.clientY
-          });
-        }
+        const host = e.currentTarget && e.currentTarget.querySelector ? e.currentTarget.querySelector('[data-line-text]') : null;
+        openMenuFromSelection(lineObj, idx, host, e.clientX, e.clientY);
       };
 
       const handleLinePointerDown = (e, lineObj, idx) => {
@@ -3442,6 +3963,75 @@
           longPressTimerRef.current = null;
         }
       };
+
+      // 提供給 <ReadingLinesList> 的穩定事件處理器（永遠呼叫最新版本，但自身參考不變）
+      lineHandlersRef.current = { handleLineMouseUp, handleLinePointerDown, cancelLongPress, jumpToPdfPage, viewMode, openMenuFromSelection };
+      readingLinesRef.current = readingLines;
+      selectionPopoverRef.current = selectionPopover;
+
+      // 觸控裝置：長按選字後拖動選取柄調整範圍，也會（停手後）開啟選字彈窗，不必再靠滑鼠 mouseup
+      useEffect(() => {
+        if (!isCoarse) return undefined;
+        let timer = 0;
+        const onSel = () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+            const range = sel.getRangeAt(0);
+            const startEl = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+            const host = startEl && startEl.closest ? startEl.closest('[data-line-text]') : null;
+            if (!host || !host.contains(range.endContainer)) return;
+            const idx = Number(host.parentElement && host.parentElement.dataset.lineIdx);
+            const line = readingLinesRef.current[idx];
+            if (!line) return;
+            lineHandlersRef.current.openMenuFromSelection(line, idx, host, 0, 0);
+          }, 380);
+        };
+        document.addEventListener('selectionchange', onSel);
+        return () => {
+          clearTimeout(timer);
+          document.removeEventListener('selectionchange', onSel);
+        };
+      }, [isCoarse]);
+      const lineHandlers = useMemo(
+        () => ({
+          onLineClick: (idx) => {
+            if (!window.getSelection()?.toString().trim()) {
+              tapSelectRef.current = true;
+              setActiveLineIdx(idx);
+              setTimeout(() => { tapSelectRef.current = false; }, 400);
+            }
+          },
+          onLineMouseUp: (e, line, idx) => lineHandlersRef.current.handleLineMouseUp(e, line, idx),
+          onLinePointerDown: (e, line, idx) => lineHandlersRef.current.handleLinePointerDown(e, line, idx),
+          onLinePointerUp: () => lineHandlersRef.current.cancelLongPress(),
+          onPageDivider: (pn) => {
+            const H0 = lineHandlersRef.current;
+            if (H0.viewMode !== 'focus') H0.jumpToPdfPage(pn, true);
+          },
+          registerLineRef: (idx, el) => { lineRefs.current[idx] = el; },
+          onToggleNote: (key) => setEditingInlineLineId((cur) => (cur === key ? null : key)),
+          onNoteChange: (key, v) =>
+            setInlineNotes((prev) => {
+              const next = { ...prev };
+              if (v) next[key] = v;
+              else delete next[key];
+              return next;
+            }),
+          onNoteClear: (key) => {
+            setInlineNotes((prev) => {
+              const next = { ...prev };
+              delete next[key];
+              return next;
+            });
+            setEditingInlineLineId(null);
+          },
+          onNoteDone: () => setEditingInlineLineId(null),
+          onNoteEdit: (key) => setEditingInlineLineId(key)
+        }),
+        []
+      );
 
       const handleRunContextualTranslate = async () => {
         if (!selectionPopover || selectionPopover.deepLoading) return;
@@ -3518,6 +4108,7 @@
           tag: initialTag,
           note: autoNote,
           ...(selectionPopover.selStart >= 0 ? { qStart: selectionPopover.selStart } : {}),
+          ...(selectionPopover.lineKind === 'block' ? { qScope: 'block' } : {}),
           ...(selectionPopover.parentId && textHighlights.some((h) => h.id === selectionPopover.parentId)
             ? { parentId: selectionPopover.parentId }
             : {}),
@@ -3539,10 +4130,24 @@
         showToast(newHl.parentId ? '已加入子標註，可自由選取 Hashtag 或編輯筆記' : '已加入重點標註，可自由選取 Hashtag 或編輯筆記');
       };
 
+      // ADHD 專注模式開關：只改變顯示方式，筆記與標註資料完全不動
+      const toggleAdhdMode = (next) => {
+        const cur = readingLines[activeLineIdx];
+        pendingActiveBlockRef.current = cur ? cur.blockKey : null;
+        setIsAutoPlaying(false);
+        setSettings((s0) => ({ ...s0, adhdMode: !!next }));
+        showToast(next ? '已開啟 ADHD 專注模式（逐句聚焦）' : '已關閉 ADHD 專注模式（顯示完整段落）');
+      };
+
       const handleJumpToLine = (targetLineId, targetLineIdx) => {
         let index = typeof targetLineIdx === 'number' ? targetLineIdx : -1;
         if (index === -1 || !readingLines[index] || readingLines[index].id !== targetLineId) {
           index = readingLines.findIndex((l) => l.id === targetLineId);
+          if (index === -1) {
+            // 目前是「完整段落」顯示（或反之）時，用所在段落找到對應行
+            const m = /^(p\d+-b\d+)-s\d+$/.exec(targetLineId || '');
+            if (m) index = readingLines.findIndex((l) => l.blockKey === m[1]);
+          }
         }
         if (index === -1) {
           showToast('找不到該段落位置');
@@ -3552,7 +4157,8 @@
 
         setIsAutoPlaying(false);
         setActiveLineIdx(index);
-        setPulseLineId(targetLineId);
+        const pulseId = readingLines[index].id;
+        setPulseLineId(pulseId);
 
         setTimeout(() => {
           const el = lineRefs.current[index];
@@ -3560,7 +4166,7 @@
         }, 40);
 
         setTimeout(() => {
-          setPulseLineId((curr) => (curr === targetLineId ? null : curr));
+          setPulseLineId((curr) => (curr === pulseId ? null : curr));
         }, 1800);
       };
 
@@ -3637,7 +4243,16 @@
           showToast('尚無重點可複製');
           return;
         }
+        const orderKeyById = {};
+        textHighlights.forEach((h) => {
+          const r = resolvedById[h.id];
+          const m = r && /^p(\d+)-b(\d+)$/.exec(r.blockKey);
+          orderKeyById[h.id] = m
+            ? [Number(m[1]), Number(m[2]), r.start]
+            : [h.pageNumber || 0, 1e6 + (h.lineIndex || 0), h.qStart || 0];
+        });
         const text = buildArchitecturePromptText({
+          orderKeyById,
           title: docMeta.title,
           numPages: docMeta.numPages,
           highlights: textHighlights,
@@ -3786,7 +4401,21 @@
         return m;
       }, [textHighlights]);
 
-      const hlDepthById = useMemo(() => computeHighlightDepths(textHighlights), [textHighlights]);
+      // 只有「會影響文章底色」的欄位改變時才重算（打字編輯筆記不屬於這類）
+      const hlRenderSig = textHighlights
+        .map((h) => `${h.id}|${h.lineId}|${h.qStart ?? ''}|${h.qScope || ''}|${h.colorId || ''}|${h.parentId || ''}|${h.quote}`)
+        .join('\n');
+      const renderHls = useMemo(() => textHighlights, [hlRenderSig]);
+      const hlDepthById = useMemo(() => computeHighlightDepths(renderHls), [renderHls]);
+      const resolvedById = useMemo(() => {
+        const m = {};
+        renderHls.forEach((h) => {
+          const r = resolveHighlightRange(h, blockIndex);
+          if (r) m[h.id] = r;
+        });
+        return m;
+      }, [renderHls, blockIndex]);
+      resolvedRef.current = resolvedById;
       const allHlTree = useMemo(() => buildHighlightTree(textHighlights, 'array'), [textHighlights]);
       const childCountById = useMemo(() => {
         const m = {};
@@ -3818,12 +4447,9 @@
       // 渲染帶有莫蘭迪底色重點的文字（支援螢幕與純文字 PDF 列印）
       // 支援母子重疊：多層底色以巢狀 <mark> 疊出，兩層以上時以不同高度的底線區分層級
       const renderHighlightedLineText = (line, isForPrint = false) => {
-        const lineHls = textHighlights.filter((h) => highlightAppliesToLine(h, line));
-        if (lineHls.length === 0) return line.text;
-
         const ranges = [];
-        for (const hl of lineHls) {
-          const r = getHighlightRangeInLine(hl, line);
+        for (const hl of renderHls) {
+          const r = getLineHighlightRange(hl, line, resolvedById[hl.id]);
           if (r) ranges.push({ start: r.start, end: r.end, hl, depth: hlDepthById[hl.id] || 0 });
         }
         if (ranges.length === 0) return line.text;
@@ -3875,7 +4501,7 @@
         const m = {};
         readingLines.forEach((l) => { m[l.id] = renderHighlightedLineText(l, false); });
         return m;
-      }, [readingLines, textHighlights, hlDepthById, currentTheme.isDark]);
+      }, [readingLines, renderHls, hlDepthById, resolvedById, currentTheme.isDark]);
 
       const fontClass =
         settings.fontFamily === 'serif'
@@ -3897,7 +4523,15 @@
           <div
             id="screen-app-shell"
             className="h-screen w-full flex flex-col overflow-hidden transition-colors duration-300 no-print"
-            style={{ backgroundColor: 'var(--bg-app)', color: 'var(--text-main)' }}
+            style={{
+              backgroundColor: 'var(--bg-app)',
+              color: 'var(--text-main)',
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              top: 'var(--app-top, 0px)',
+              height: 'var(--app-h, 100dvh)'
+            }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -3923,7 +4557,7 @@
 
             {/* 匯入進度遮罩 */}
             {importProgressText && (
-              <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+              <div className="vv-fixed z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
                 <div
                   style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
                   className="px-6 py-4 rounded-2xl border shadow-2xl text-xs font-semibold flex items-center gap-3"
@@ -3937,7 +4571,7 @@
             {/* 頂部導覽列 */}
             <header
               style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
-              className="h-14 px-3 sm:px-4 flex items-center justify-between gap-2 border-b shrink-0 z-30 relative backdrop-blur-md"
+              className="min-h-[56px] py-1.5 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b shrink-0 z-30 relative backdrop-blur-md"
             >
               {/* 左區：書庫（支援分類資料夾） + 匯入 PDF */}
               <div className="flex items-center gap-2 min-w-0">
@@ -4015,7 +4649,7 @@
 
                       {/* 資料夾篩選膠囊列 ＋ 新增資料夾 */}
                       <div className="space-y-2">
-                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
+                        <div className="flex flex-wrap items-center gap-1.5 pb-1 text-[11px]">
                           <button
                             onClick={() => setSelectedFolderId('ALL')}
                             style={selectedFolderId === 'ALL' ? { backgroundColor: 'var(--accent)', color: '#fff' } : { backgroundColor: 'var(--bg-subtle)' }}
@@ -4152,12 +4786,33 @@
                                       }}
                                       onBlur={(e) => {
                                         if (e.currentTarget.dataset.done) return;
+                                        if (renameBtnRef.current) { renameBtnRef.current = false; return; }
                                         handleRenameDocument(item.id, renameDraft);
                                       }}
                                       style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--accent)', color: 'var(--text-main)' }}
                                       className="w-full h-7 px-2 rounded-lg border text-xs font-semibold outline-none"
                                     />
-                                    <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Enter 儲存 · Esc 取消</div>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <button
+                                        type="button"
+                                        onPointerDown={() => { renameBtnRef.current = true; }}
+                                        onClick={() => handleRenameDocument(item.id, renameDraft)}
+                                        style={{ backgroundColor: 'var(--accent)' }}
+                                        className="px-3 py-1 rounded-lg text-white text-[11px] font-semibold"
+                                      >
+                                        儲存
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onPointerDown={() => { renameBtnRef.current = true; }}
+                                        onClick={() => setRenamingDocId(null)}
+                                        style={{ borderColor: 'var(--border-color)' }}
+                                        className="px-3 py-1 rounded-lg border text-[11px] font-medium"
+                                      >
+                                        取消
+                                      </button>
+                                      <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>也可按 Enter／Esc</span>
+                                    </div>
                                   </div>
                                 ) : (
                                 <button
@@ -4302,7 +4957,7 @@
               </nav>
 
               {/* 右區：雙 PDF 匯出按鈕 ＋ 完整閱讀設定 ＋ 側欄 ＋ API 金鑰 */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 min-w-0 max-w-full">
                 {/* 反白即翻開關 */}
                 <button
                   onClick={() =>
@@ -4366,7 +5021,7 @@
                   {showSettingsPanel && (
                     <div
                       style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-                      className="absolute right-0 top-11 w-[330px] sm:w-[375px] rounded-2xl border p-4 shadow-2xl z-50 space-y-4 max-h-[84vh] overflow-y-auto"
+                      className="absolute right-0 top-11 w-[330px] sm:w-[375px] rounded-2xl border p-4 shadow-2xl z-50 space-y-4 max-h-[calc(var(--app-h,100dvh)-5rem)] overflow-y-auto max-w-[calc(100vw-1rem)]"
                     >
                       <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: 'var(--border-color)' }}>
                         <span className="text-xs font-bold">ADHD 護眼閱讀完整參數</span>
@@ -4387,6 +5042,18 @@
                             <Icon name="x" className="w-3.5 h-3.5" />
                           </button>
                         </div>
+                      </div>
+
+                      {/* ADHD 專注閱讀模式總開關 */}
+                      <div style={{ backgroundColor: 'var(--accent-soft)', borderColor: 'var(--accent)' }} className="rounded-xl border px-3 py-2">
+                        <ToggleSwitch
+                          checked={adhdOn}
+                          onChange={(v) => toggleAdhdMode(v)}
+                          label="ADHD 專注閱讀模式（逐句聚光燈）"
+                        />
+                        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                          關閉＝顯示完整段落（預設）。只改變顯示方式，筆記與標註不受影響。
+                        </p>
                       </div>
 
                       {/* 主題選擇 */}
@@ -4415,8 +5082,8 @@
                         </div>
                       </div>
 
-                      {/* 聚光燈粒度：逐句 vs 逐段 */}
-                      <div>
+                      {/* 聚光燈粒度：逐句 vs 逐段（僅 ADHD 模式） */}
+                      <div className={adhdOn ? '' : 'hidden'}>
                         <label className="text-[11px] font-semibold block mb-1.5" style={{ color: 'var(--text-muted)' }}>
                           聚光燈推進單位（逐句／逐段）
                         </label>
@@ -4477,8 +5144,8 @@
                         </div>
                       </div>
 
-                      {/* 非當前行變暗程度 */}
-                      <div>
+                      {/* 非當前行變暗程度（僅 ADHD 模式） */}
+                      <div className={adhdOn ? '' : 'hidden'}>
                         <div className="flex justify-between text-[11px] mb-1">
                           <span style={{ color: 'var(--text-muted)' }}>非當前行變暗遮罩強度</span>
                           <span className="font-mono font-semibold">{settings.dimIntensity}%</span>
@@ -4560,8 +5227,8 @@
                         </div>
                       </div>
 
-                      {/* 自動播放配速 WPM */}
-                      <div>
+                      {/* 自動播放配速 WPM（僅 ADHD 模式） */}
+                      <div className={adhdOn ? '' : 'hidden'}>
                         <div className="flex justify-between text-[11px] mb-1">
                           <span style={{ color: 'var(--text-muted)' }}>自動播放配速 (WPM)</span>
                           <span className="font-mono font-semibold">{settings.wpm} wpm</span>
@@ -4641,7 +5308,7 @@
             {/* 主工作區 */}
             <div
               ref={workspaceRef}
-              className={`flex-1 flex min-h-0 overflow-hidden relative ${isDraggingSplit ? 'select-none cursor-col-resize' : ''}`}
+              className={`flex-1 flex min-h-0 overflow-hidden relative ${viewMode === 'split' ? 'max-md:flex-col' : ''} ${isDraggingSplit ? 'select-none cursor-col-resize' : ''}`}
             >
               {!activeDocId ? (
                 <main className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
@@ -4695,9 +5362,51 @@
                         ...(viewMode === 'split' ? { flexBasis: `${splitRatio}%`, width: `${splitRatio}%` } : {})
                       }}
                       className={`relative overflow-y-auto px-4 sm:px-8 pt-8 pb-32 ${
-                        viewMode === 'split' ? 'w-full md:shrink-0' : 'flex-1'
+                        viewMode === 'split' ? 'w-full md:shrink-0 max-md:!w-full max-md:!basis-1/2 max-md:min-h-0 max-md:border-b' : 'flex-1'
                       }`}
                     >
+                      {/* ADHD 專注模式開關：預設關閉；選擇會被記住 */}
+                      <div
+                        className="sticky top-0 z-10 -mt-8 mb-5 -mx-4 sm:-mx-8 px-4 sm:px-8 py-1.5 border-b backdrop-blur-md"
+                        style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border-color)' }}
+                      >
+                        <div className="mx-auto flex items-center justify-between gap-3" style={{ maxWidth: `${settings.maxWidth}px` }}>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold flex items-center gap-1.5">
+                              <Icon name="eye" className="w-3.5 h-3.5 opacity-80" />
+                              <span>ADHD 專注模式</span>
+                              <span
+                                className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
+                                style={{ backgroundColor: adhdOn ? 'var(--accent)' : 'var(--bg-subtle)', color: adhdOn ? '#fff' : 'var(--text-muted)' }}
+                              >
+                                {adhdOn ? '開' : '關'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                              {adhdOn ? '逐句聚焦、其餘變暗，可自動播放' : '顯示完整段落（預設）'}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={adhdOn}
+                            aria-label="ADHD 專注模式"
+                            onClick={() => toggleAdhdMode(!adhdOn)}
+                            className="relative inline-flex h-11 w-16 shrink-0 items-center justify-center focus:outline-none"
+                          >
+                            <span
+                              style={{ backgroundColor: adhdOn ? 'var(--accent)' : 'var(--border-color)' }}
+                              className="relative inline-flex h-7 w-12 rounded-full transition-colors duration-200"
+                            >
+                              <span
+                                style={{ transform: adhdOn ? 'translateX(22px)' : 'translateX(3px)' }}
+                                className="inline-block h-[22px] w-[22px] rounded-full bg-white shadow transition-transform duration-200 mt-[3px]"
+                              />
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
                       <div style={{ maxWidth: `${settings.maxWidth}px` }} className={`mx-auto ${fontClass}`}>
                         <div className="mb-8 pb-5 border-b" style={{ borderColor: 'var(--border-color)' }}>
                           <div className="flex items-center flex-wrap gap-2 text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
@@ -4732,175 +5441,29 @@
                             )}
                           </div>
                         ) : (
-                          <div className="space-y-3">
-                            {readingLines.map((line, idx) => {
-                              const isActive = idx === activeLineIdx;
-                              const isPulsing = pulseLineId === line.id;
-                              const prevLine = idx > 0 ? readingLines[idx - 1] : null;
-                              const showPageDivider = !prevLine || prevLine.pageNumber !== line.pageNumber;
-                              const inactiveOpacity = Math.max(0.08, 1 - settings.dimIntensity / 100);
-                              const noteVal = inlineNotes[line.id] || '';
-                              const hasInlineNote = Boolean(noteVal.trim());
-                              const isEditingInline = editingInlineLineId === line.id;
-
-                              return (
-                                <React.Fragment key={line.id}>
-                                  {showPageDivider && (
-                                    <div className="pt-5 pb-2 flex items-center gap-3 select-none">
-                                      <button
-                                        onClick={() => {
-                                          if (viewMode !== 'focus') jumpToPdfPage(line.pageNumber, true);
-                                        }}
-                                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-                                        className="text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full border hover:opacity-100"
-                                      >
-                                        Page {line.pageNumber} / {docMeta.numPages}
-                                      </button>
-                                      <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-                                    </div>
-                                  )}
-
-                                  <div
-                                    ref={(el) => { lineRefs.current[idx] = el; }}
-                                    onClick={() => {
-                                      if (!window.getSelection()?.toString().trim()) setActiveLineIdx(idx);
-                                    }}
-                                    onMouseUp={(e) => handleLineMouseUp(e, line, idx)}
-                                    onPointerDown={(e) => handleLinePointerDown(e, line, idx)}
-                                    onPointerUp={cancelLongPress}
-                                    onPointerCancel={cancelLongPress}
-                                    style={{
-                                      opacity: isActive ? 1 : inactiveOpacity,
-                                      backgroundColor: isActive ? 'var(--bg-active-card)' : 'transparent',
-                                      borderColor: isActive ? 'var(--border-color)' : 'transparent',
-                                      fontSize: line.type === 'heading' ? `${Math.round(settings.fontSize * 1.22)}px` : `${settings.fontSize}px`,
-                                      lineHeight: settings.lineHeight,
-                                      letterSpacing: `${settings.letterSpacing}em`
-                                    }}
-                                    className={`group relative rounded-2xl px-4 sm:px-5 py-3 border transition-all duration-200 cursor-pointer ${
-                                      isActive ? 'shadow-md' : 'hover:opacity-75'
-                                    } ${line.type === 'heading' ? 'font-bold mt-3' : ''} ${isPulsing ? 'pulse-target' : ''}`}
-                                  >
-                                    {isActive && (
-                                      <span
-                                        style={{ backgroundColor: 'var(--accent)' }}
-                                        className="absolute left-1.5 top-3 bottom-3 w-1 rounded-full"
-                                      />
-                                    )}
-
-                                    <div data-line-text="1">{screenLineNodes[line.id] ?? line.text}</div>
-
-                                    {/* 行間即時筆記按鈕 */}
-                                    <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setEditingInlineLineId((cur) => (cur === line.id ? null : line.id));
-                                        }}
-                                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
-                                        className="px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 shadow-sm"
-                                      >
-                                        <Icon name="note" className="w-3 h-3 text-amber-500" />
-                                        <span>{hasInlineNote ? '編輯筆記' : '+ 筆記'}</span>
-                                      </button>
-                                    </div>
-
-                                    {/* 行間即時筆記（即時自動存檔 + 點擊完成收合） */}
-                                    {(hasInlineNote || isEditingInline) && (
-                                      <div
-                                        onClick={(e) => e.stopPropagation()}
-                                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--accent)' }}
-                                        className="mt-3 p-3 rounded-xl border border-l-4 text-xs space-y-2"
-                                      >
-                                        <div className="flex items-center justify-between text-[11px] font-semibold" style={{ color: 'var(--accent-text)' }}>
-                                          <span className="flex items-center gap-1">
-                                            <Icon name="note" className="w-3 h-3" />
-                                            <span>行間即時筆記（自動保存）</span>
-                                          </span>
-                                          {isEditingInline ? (
-                                            <div className="flex items-center gap-2">
-                                              {hasInlineNote && (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setInlineNotes((prev) => {
-                                                      const next = { ...prev };
-                                                      delete next[line.id];
-                                                      return next;
-                                                    });
-                                                    setEditingInlineLineId(null);
-                                                  }}
-                                                  style={{ color: 'var(--danger)' }}
-                                                  className="hover:underline"
-                                                >
-                                                  清空
-                                                </button>
-                                              )}
-                                              <button
-                                                type="button"
-                                                onClick={() => setEditingInlineLineId(null)}
-                                                style={{ backgroundColor: 'var(--accent)' }}
-                                                className="px-2.5 py-0.5 rounded-md text-white font-semibold"
-                                              >
-                                                完成
-                                              </button>
-                                            </div>
-                                          ) : (
-                                            <button
-                                              type="button"
-                                              onClick={() => setEditingInlineLineId(line.id)}
-                                              className="hover:underline flex items-center gap-0.5"
-                                            >
-                                              <Icon name="edit" className="w-3 h-3" />
-                                              <span>編輯</span>
-                                            </button>
-                                          )}
-                                        </div>
-
-                                        {isEditingInline ? (
-                                          <textarea
-                                            value={noteVal}
-                                            autoFocus
-                                            rows={2}
-                                            placeholder="輸入您對本句的想法或補充（即時自動儲存，點右上角「完成」收合）..."
-                                            onChange={(e) => {
-                                              const v = e.target.value;
-                                              setInlineNotes((prev) => {
-                                                const next = { ...prev };
-                                                if (v) next[line.id] = v;
-                                                else delete next[line.id];
-                                                return next;
-                                              });
-                                            }}
-                                            style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                                            className="w-full p-2.5 rounded-lg border text-xs outline-none resize-none"
-                                          />
-                                        ) : (
-                                          <div
-                                            onClick={() => setEditingInlineLineId(line.id)}
-                                            className="leading-relaxed opacity-90 whitespace-pre-wrap"
-                                          >
-                                            {noteVal}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {isActive && isAutoPlaying && (
-                                      <div className="mt-2.5 h-1 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                                        <div style={{ width: `${autoPlayProgress}%`, backgroundColor: 'var(--accent)' }} className="h-full" />
-                                      </div>
-                                    )}
-                                  </div>
-                                </React.Fragment>
-                              );
-                            })}
-                          </div>
+                          <ReadingLinesList
+                            lines={readingLines}
+                            activeLineIdx={activeLineIdx}
+                            pulseLineId={pulseLineId}
+                            isAutoPlaying={isAutoPlaying}
+                            adhdOn={adhdOn}
+                            fontSize={settings.fontSize}
+                            lineHeight={settings.lineHeight}
+                            letterSpacing={settings.letterSpacing}
+                            dimIntensity={settings.dimIntensity}
+                            numPages={docMeta.numPages}
+                            lineNodes={screenLineNodes}
+                            inlineNotes={inlineNotes}
+                            blockNotes={blockNotes}
+                            editingInlineLineId={editingInlineLineId}
+                            progressRef={progressBarRef}
+                            handlers={lineHandlers}
+                          />
                         )}
                       </div>
 
-                      {/* 底部播放控制列 */}
-                      {readingLines.length > 0 && (
+                      {/* 底部播放控制列（僅 ADHD 專注模式） */}
+                      {adhdOn && !keyboardOpen && readingLines.length > 0 && (
                         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 max-w-[94vw]">
                           <div
                             role="toolbar"
@@ -4970,18 +5533,23 @@
                         setSplitRatio(50);
                         showToast('已重置雙欄寬度為 50% : 50%');
                       }}
-                      style={{
-                        backgroundColor: isDraggingSplit ? 'var(--accent)' : 'var(--border-color)'
-                      }}
-                      className="hidden md:flex w-2 hover:w-2.5 shrink-0 cursor-col-resize items-center justify-center transition-all group relative z-20"
-                      title="左右拖曳調整雙欄比例（20%~80%），雙擊重置為 50% : 50%"
+                      style={{ '--divider-bg': isDraggingSplit ? 'var(--accent)' : 'var(--border-color)', touchAction: 'none' }}
+                      className="split-divider hidden md:flex w-2 shrink-0 cursor-col-resize items-center justify-center group relative z-20"
+                      title="左右拖曳調整雙欄比例（20%~80%）；點一下握把重置為 50% : 50%"
                     >
-                      <div
+                      <button
+                        type="button"
+                        aria-label="重置雙欄寬度為 50% : 50%"
+                        onClick={() => {
+                          if (splitMovedRef.current) return;
+                          setSplitRatio(50);
+                          showToast('已重置雙欄寬度為 50% : 50%');
+                        }}
                         style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-                        className="h-9 w-4 rounded-full border flex items-center justify-center shadow-sm group-hover:scale-110 transition"
+                        className="relative h-9 w-4 rounded-full border flex items-center justify-center shadow-sm transition"
                       >
                         <Icon name="grip" className="w-3 h-3 opacity-75" />
-                      </div>
+                      </button>
                     </div>
                   )}
 
@@ -4989,7 +5557,7 @@
                   {viewMode !== 'focus' && (
                     <section
                       className={`flex flex-col min-h-0 overflow-hidden ${
-                        viewMode === 'split' ? 'hidden md:flex flex-1 min-w-0' : 'flex-1'
+                        viewMode === 'split' ? 'flex flex-1 min-w-0 min-h-0' : 'flex-1'
                       }`}
                     >
                       <div
@@ -5237,9 +5805,16 @@
 
               {/* 右側邊欄：重點筆記（修復 Hashtag 跳出 ＋ 自訂標籤）& 問問 Gemini (鎖定 gemini-3.8-flash) */}
               {showRightSidebar && (
+                <div
+                  className="lg:hidden absolute inset-0 z-20 bg-black/30"
+                  onClick={() => setShowRightSidebar(false)}
+                  aria-hidden="true"
+                />
+              )}
+              {showRightSidebar && (
                 <aside
                   style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-                  className="right-sidebar-panel w-full sm:w-[415px] border-l flex flex-col shrink-0 z-30"
+                  className="right-sidebar-panel w-[min(415px,92vw)] lg:w-[415px] border-l flex flex-col shrink-0 z-30 absolute inset-y-0 right-0 shadow-2xl lg:static lg:shadow-none"
                 >
                   <div className="p-3 border-b flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="flex flex-1 p-1 rounded-xl border" style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}>
@@ -5327,6 +5902,16 @@
                             <span>{isSyncingPdf ? '同步中...' : '同步重點至 PDF'}</span>
                           </button>
                           <button
+                            onClick={handleUndoPdfAnnotation}
+                            disabled={undoStack.length === 0}
+                            style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+                            className="h-7 px-2.5 rounded-lg border font-medium flex items-center gap-1 transition hover:opacity-90 disabled:opacity-40"
+                            title="復原上一步 PDF 標註或同步（Ctrl/Cmd+Z 的觸控替代）"
+                          >
+                            <Icon name="undo" className="w-3.5 h-3.5 opacity-80" />
+                            <span>復原</span>
+                          </button>
+                          <button
                             onClick={handleCopyArchitecturePrompt}
                             disabled={textHighlights.length === 0}
                             style={copiedPrompt ? { backgroundColor: 'var(--accent-soft)', borderColor: 'var(--accent)', color: 'var(--accent-text)' } : { backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
@@ -5338,7 +5923,7 @@
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                        <div className="flex flex-wrap items-center gap-1.5 pb-1">
                           <span className="opacity-60 shrink-0 ml-1"><Icon name="tag" className="w-3 h-3" /></span>
                           <button
                             onClick={() => setSelectedTagFilter('ALL')}
@@ -5586,7 +6171,7 @@
                                     <div className="space-y-2.5" onClick={(e) => e.stopPropagation()}>
                                       <textarea
                                         value={hl.note || ''}
-                                        autoFocus
+                                        autoFocus={!isCoarse}
                                         rows={3}
                                         placeholder="輸入個人註釋與筆記（即時自動存檔）..."
                                         onChange={(e) => {
@@ -5872,7 +6457,7 @@
                   backgroundColor: 'var(--bg-panel)',
                   borderColor: 'var(--border-color)'
                 }}
-                className="fixed z-50 w-[335px] sm:w-[390px] rounded-2xl border p-3.5 shadow-2xl space-y-2.5"
+                className="fixed z-50 w-[335px] sm:w-[390px] max-w-[calc(100vw-1rem)] rounded-2xl border p-3.5 shadow-2xl space-y-2.5"
               >
                 {settings.instantTranslate && (
                   <div
@@ -6005,7 +6590,7 @@
 
             {/* API 金鑰設定視窗（單一模型 gemini-3.8-flash ＋ 雙重永久儲存） */}
             {showAccountModal && (
-              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="vv-fixed z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
                 <div
                   style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
                   className="w-full max-w-md rounded-2xl border p-5 shadow-2xl space-y-4"
@@ -6062,13 +6647,13 @@
             {/* 同步重點至 PDF：未成功的句子清單 */}
             {syncReport && (
               <div
-                className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+                className="vv-fixed z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
                 onClick={() => setSyncReport(null)}
               >
                 <div
                   onClick={(e) => e.stopPropagation()}
                   style={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)' }}
-                  className="w-full max-w-md rounded-2xl border p-4 shadow-2xl flex flex-col gap-3 max-h-[80vh]"
+                  className="w-full max-w-md rounded-2xl border p-4 shadow-2xl flex flex-col gap-3 max-h-[calc(var(--app-h,100dvh)-2rem)]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -6127,7 +6712,7 @@
               專屬純文字 PDF 完整多頁列印排版層（螢幕隱藏、列印展開第 1 至最後一頁，無閱讀框）
              ================================================================= */}
           <div id="print-clean-layer" className={fontClass}>
-            {activeDocId && (
+            {activeDocId && printMode && (
               <div style={{ maxWidth: '100%', margin: '0 auto', color: '#111827' }}>
                 <div style={{ borderBottom: '2px solid #cbd5e1', paddingBottom: '12px', marginBottom: '20px' }}>
                   <h1 style={{ fontSize: '22pt', fontWeight: 700, margin: '0 0 6px 0', lineHeight: 1.3 }}>
@@ -6143,7 +6728,10 @@
                   {readingLines.map((line, idx) => {
                     const prevLine = idx > 0 ? readingLines[idx - 1] : null;
                     const showPageHeader = !prevLine || prevLine.pageNumber !== line.pageNumber;
-                    const noteText = inlineNotes[line.id]?.trim();
+                    const noteText =
+                      (line.kind === 'block' && blockNotes[line.blockKey]
+                        ? blockNotes[line.blockKey].map(([, v]) => (v || '').trim()).filter(Boolean).join('\n')
+                        : (inlineNotes[line.id] || '').trim()) || '';
 
                     return (
                       <React.Fragment key={`print-${line.id}`}>
